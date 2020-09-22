@@ -565,20 +565,19 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 	const int FW = 3;
 	const int RH = desc.Result.Height(); //SH / S;
 	const int RW = desc.Result.Width(); //SW / S;
-
-//	CFloatHandleStackVar Source( mathEngine(), SH * SW * C );
-	// Add align padding
-	size_t filterBufferSize = FH * FW * C * FC + 4;
+	// Number of filters for process in x4 convolution
+	const int FC_x4 = 8;
 
 	t4.Start();
-	CFloatHandleStackVar Filter( mathEngine(), filterBufferSize );
-	void* alignedFltPtr = GetRaw( Filter.GetHandle() );
-	ASSERT_EXPR( std::align( 16, FH * FW * C * FC, alignedFltPtr, filterBufferSize ) != nullptr );
-	float* flt = static_cast<float*>( alignedFltPtr );
+	const int FilterSize = FH * FW * C * FC;
+	CFloatHandleStackVar Filter( mathEngine(), FilterSize );
+	float* flt = static_cast<float*>(  GetRaw( Filter.GetHandle() ) );
+	CFloatHandleStackVar Filter_x4( mathEngine(), FilterSize );
+	float* flt_x4 = static_cast<float*>(  GetRaw( Filter_x4.GetHandle() ) );
 //	CFloatHandleStackVar Result( mathEngine(), RH * RW * FC );
 
 	{
-		// Rearrange filter data.
+		// Rearrange filter data
 		// Initial packing:
 		// Filter[0] Pixel[0] Channel[0-23]
 		// Filter[0] Pixel[1] Channel[0-23]
@@ -587,7 +586,7 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 		// Filter[1] Pixel[0] Channel[0-23]
 		// ...
 		// Filter[23] Pixel[8] Channel[0-23]
-		// Result packing:
+		// Result packing  for x1 and x2:
 		// Pixel[0] Channel[0] Filter[0-23]
 		// Pixel[0] Channel[1] Filter[0-23]
 		// ...
@@ -600,10 +599,39 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 		for( int y = 0; y < FH; y++ ) {
 			for( int x = 0; x < FW; x++ ) {
 				for( int c = 0; c < C; c++ ) {
-					const float* srcFilter = GetRaw(filterData ) + ( x + y * FW ) * C + c;
+					const float* srcFilter = GetRaw( filterData ) + ( x + y * FW ) * C + c;
 					for( int f = 0; f < FC; f++ ) {
 						*dstFilter++ = *srcFilter;
 						srcFilter += FW * FH * C;
+					}
+				}
+			}
+		}
+
+		// Result packing  for x1 and x2:
+		// Pixel[0] Channel[0] Filter[0-7]
+		// Pixel[0] Channel[1] Filter[0-7]
+		// ...
+		// Pixel[0] Channel[23] Filter[0-7]
+		// Pixel[1] Channel[0] Filter[0-7]
+		// ...
+		// Pixel[8] Channel[23] Filter[0-7]
+		// Pixel[0] Channel[0] Filter[8-15]
+		// Pixel[0] Channel[1] Filter[8-15]
+		// ...
+		// Pixel[8] Channel[23] Filter[16-23]
+
+		dstFilter = flt_x4;
+		for( int f = 0; f < FC; f += FC_x4 ) {
+			const float* fltGroupPtr = GetRaw( filterData ) + f * FW * FH * C;
+			for( int y = 0; y < FH; y++ ) {
+				for( int x = 0; x < FW; x++ ) {
+					for( int c = 0; c < C; c++ ) {
+						const float* srcFilter = fltGroupPtr + ( x + y * FW ) * C + c;
+						for( int i = 0; i < FC_x4; i++ ) {
+							*dstFilter++ = *srcFilter;
+							srcFilter += FW * FH * C;
+						}
 					}
 				}
 			}
@@ -622,10 +650,10 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 	ASSERT_EXPR( reinterpret_cast<unsigned long>(src) % 32 == 0 );
 	ASSERT_EXPR( reinterpret_cast<unsigned long>(dst) % 32 == 0 );
 	ASSERT_EXPR( reinterpret_cast<unsigned long>(flt) % 32 == 0 );
+	ASSERT_EXPR( reinterpret_cast<unsigned long>(flt_x4) % 32 == 0 );
 
 	const int SrcYStep = S * SrcLineStride;
 	const int SrcXStep = S * C;
-
 
 	auto ProcessChannels_avx2 = []( const float* srcPtr, const float* fltPtr, __m256& r0, __m256& r1, __m256& r2 ) {
 
@@ -679,8 +707,9 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 		};
 
 		for( int c = 0; c < C; c += 8 ) {
-			__m256 s0 = _mm256_loadu_ps( srcPtr + c );
-			__m256 s1 = _mm256_loadu_ps( srcPtr + SrcXStep + c );
+			__m256 s0 = _mm256_loadu_ps( srcPtr );
+			__m256 s1 = _mm256_loadu_ps( srcPtr + SrcXStep);
+			srcPtr += 8;
 
 			Process( s0, s1, _mm256_set1_epi32( 0 ) );
 			Process( s0, s1, _mm256_set1_epi32( 1 ) );
@@ -694,43 +723,44 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 
 	};
 
-	auto ProcessChannels = []( const float* srcPtr, const float* fltPtr,
-			__m128& r0, __m128& r1, __m128& r2, __m128& r3, __m128& r4, __m128& r5 ) {
+	auto ProcessChannels_avx2_x4 = [&]( const float* srcPtr, const float* fltPtr,
+			__m256& r0, __m256& r1, __m256& r2, __m256& r3 ) {
 
-		auto Process = [&]( __m128 s0 ) {
-			__m128 f0 = _mm_loadu_ps( fltPtr );
-			__m128 f1 = _mm_loadu_ps( fltPtr + 4 );
-			__m128 f2 = _mm_loadu_ps( fltPtr + 8 );
-			__m128 f3 = _mm_loadu_ps( fltPtr + 12 );
-			__m128 f4 = _mm_loadu_ps( fltPtr + 16 );
-			__m128 f5 = _mm_loadu_ps( fltPtr + 20 );
+		auto Process = [&]( __m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256i t ) {
+			__m256 f = _mm256_loadu_ps( fltPtr );
 
-			__m128 m0 = _mm_mul_ps( f0, s0 );
-			__m128 m1 = _mm_mul_ps( f1, s0 );
-			__m128 m2 = _mm_mul_ps( f2, s0 );
-			__m128 m3 = _mm_mul_ps( f3, s0 );
-			__m128 m4 = _mm_mul_ps( f4, s0 );
-			__m128 m5 = _mm_mul_ps( f5, s0 );
+			__m256 st0 =  _mm256_permutevar8x32_ps( s0, t );
+			__m256 st1 =  _mm256_permutevar8x32_ps( s1, t );
+			__m256 st2 =  _mm256_permutevar8x32_ps( s2, t );
+			__m256 st3 =  _mm256_permutevar8x32_ps( s3, t );
 
-			r0 = _mm_add_ps( r0, m0 );
-			r1 = _mm_add_ps( r1, m1 );
-			r2 = _mm_add_ps( r2, m2 );
-			r3 = _mm_add_ps( r3, m3 );
-			r4 = _mm_add_ps( r4, m4 );
-			r5 = _mm_add_ps( r5, m5 );
+			fltPtr += FC_x4;
 
-			fltPtr += FC;
+			r0 = _mm256_fmadd_ps( f, st0, r0 );
+			r1 = _mm256_fmadd_ps( f, st1, r1 );
+			r2 = _mm256_fmadd_ps( f, st2, r2 );
+			r3 = _mm256_fmadd_ps( f, st3, r3 );
+
+
 		};
 
-		for( int c = 0; c < C; c +=4 ) {
-			__m128 s = _mm_loadu_ps( srcPtr + c );
-			Process( _mm_shuffle_ps( s, s, 0x00 ) );
-			Process( _mm_shuffle_ps( s, s, 0x55 ) );
-			Process( _mm_shuffle_ps( s, s, 0xaa ) );
-			Process( _mm_shuffle_ps( s, s, 0xff ) );
+		for( int c = 0; c < C; c += 8 ) {
+			__m256 s0 = _mm256_loadu_ps( srcPtr );
+			__m256 s1 = _mm256_loadu_ps( srcPtr + SrcXStep );
+			__m256 s2 = _mm256_loadu_ps( srcPtr + 2 * SrcXStep );
+			__m256 s3 = _mm256_loadu_ps( srcPtr + 3 * SrcXStep );
+			srcPtr += 8;
+
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 0 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 1 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 2 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 3 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 4 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 5 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 6 ) );
+			Process( s0, s1, s2, s3, _mm256_set1_epi32( 7 ) );
 		}
 	};
-
 
 	// Choose proper pixels in source and filter:
 	// 0  1  2
@@ -762,57 +792,16 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 		{ 1 * C * FC, 2 * C * FC, 4 * C * FC, 5 * C * FC, 7 * C * FC, 8 * C * FC } // 1 2 4 5 7 8
 	};
 
-	auto ApplyPartitialFilter3x3_24ch_sse2 = [&]( const float* srcPtr, const vector<int>& srcPixelOffset,
-			const float* fltPtr, const vector<int>& fltPixels, float* dstPtr ) {
-
-		__m128 r0 = _mm_load_ps( dstPtr );
-		__m128 r1 = _mm_load_ps( dstPtr + 4 );
-		__m128 r2 = _mm_load_ps( dstPtr + 8 );
-		__m128 r3 = _mm_load_ps( dstPtr + 12 );
-		__m128 r4 = _mm_load_ps( dstPtr + 16 );
-		__m128 r5 = _mm_load_ps( dstPtr + 20 );
-
-		auto srcIt = srcPixelOffset.cbegin();
-		auto fltIt = fltPixels.cbegin();
-		for( ; srcIt != srcPixelOffset.cend(); srcIt++, fltIt++ ) {
-			ProcessChannels( srcPtr + *srcIt, fltPtr + *fltIt , r0, r1, r2, r3, r4, r5  );
-		}
-
-		// Store result of convolution for (fx,fy) pixel of f-th channel
-		_mm_store_ps( dstPtr, r0 );
-		_mm_store_ps( dstPtr + 4, r1 );
-		_mm_store_ps( dstPtr + 8, r2 );
-		_mm_store_ps( dstPtr + 12, r3 );
-		_mm_store_ps( dstPtr + 16, r4 );
-		_mm_store_ps( dstPtr + 20, r5 );
-	};
-
-	auto ApplyWholeFilter3x3_24ch_sse2 = [&]( const float* srcPtr, const float* fltPtr, float* dstPtr  ) {
-
-		__m128 r0 = _mm_load_ps( dstPtr );
-		__m128 r1 = _mm_load_ps( dstPtr + 4 );
-		__m128 r2 = _mm_load_ps( dstPtr + 8 );
-		__m128 r3 = _mm_load_ps( dstPtr + 12 );
-		__m128 r4 = _mm_load_ps( dstPtr + 16 );
-		__m128 r5 = _mm_load_ps( dstPtr + 20 );
-
-			for( int fy = 0; fy < FH; fy++ ) {
-				for( int fx = 0; fx < FW; fx++ ) {
-					ProcessChannels( srcPtr, fltPtr, r0, r1, r2, r3, r4, r5 );
-					// Move to next pixel in source image on the SAME line
-					srcPtr += SrcXDilation;
-					fltPtr += C * FC;
-				}
-				// Move to next pixel in source image on the NEXT line
-				srcPtr += SrcYDilation - SrcXWindowSize;
-			}
-			// Store result of convolution for (fx,fy) pixel of f-th channel
-			_mm_store_ps( dstPtr, r0 );
-			_mm_store_ps( dstPtr + 4, r1 );
-			_mm_store_ps( dstPtr + 8, r2 );
-			_mm_store_ps( dstPtr + 12, r3 );
-			_mm_store_ps( dstPtr + 16, r4 );
-			_mm_store_ps( dstPtr + 20, r5 );
+	// Offset is relative to top left pixel
+	const vector<int> FltPixels_x4[8] = {
+		{ 4 * C * FC_x4, 5 * C * FC_x4, 7 * C * FC_x4, 8 * C * FC_x4 }, // 4 5 7 8
+		{ 3 * C * FC_x4, 4 * C * FC_x4, 5 * C * FC_x4, 6 * C * FC_x4, 7 * C * FC_x4, 8 * C * FC_x4 }, // 3 4 5 6 7 8
+		{ 3 * C * FC_x4, 4 * C * FC_x4, 6 * C * FC_x4, 7 * C * FC_x4 }, // 3 4 6 7
+		{ 0 * C * FC_x4, 1 * C * FC_x4, 3 * C * FC_x4, 4 * C * FC_x4, 6 * C * FC_x4, 7 * C * FC_x4 }, // 0 1 3 4 6 7
+		{ 0 * C * FC_x4, 1 * C * FC_x4, 3 * C * FC_x4, 4 * C * FC_x4 }, // 0 1 3 4
+		{ 0 * C * FC_x4, 1 * C * FC_x4, 2 * C * FC_x4, 3 * C * FC_x4, 4 * C * FC_x4, 5 * C * FC_x4 }, // 0 1 2 3 4 5
+		{ 1 * C * FC_x4, 2 * C * FC_x4, 4 * C * FC_x4, 5 * C * FC_x4 }, // 1 2 4 5
+		{ 1 * C * FC_x4, 2 * C * FC_x4, 4 * C * FC_x4, 5 * C * FC_x4, 7 * C * FC_x4, 8 * C * FC_x4 } // 1 2 4 5 7 8
 	};
 
 	const __m256 ft0 = freeTermData != 0 ? _mm256_loadu_ps( GetRaw( *freeTermData ) ) : _mm256_setzero_ps();
@@ -861,6 +850,34 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 		_mm256_storeu_ps( dstPtr + 24, r10 );
 		_mm256_storeu_ps( dstPtr + 32, r11 );
 		_mm256_storeu_ps( dstPtr + 40, r12 );
+	};
+
+	auto ApplyPartitialFilter3x3_24ch_x4 = [&]( const float* srcPtr, const vector<int>& srcPixelOffset,
+			const float* fltPtr, const vector<int>& fltPixels, float* dstPtr ) {
+
+		auto Process = [&]( const __m256& ft ) {
+			__m256 r0 = ft;
+			__m256 r1 = ft;
+			__m256 r2 = ft;
+			__m256 r3 = ft;
+
+			auto srcIt = srcPixelOffset.cbegin();
+			auto fltIt = fltPixels.cbegin();
+			for( ; srcIt != srcPixelOffset.cend(); srcIt++, fltIt++ ) {
+				ProcessChannels_avx2_x4( srcPtr + *srcIt, fltPtr + *fltIt, r0, r1, r2, r3 );
+			}
+			fltPtr += FH * FW * C * FC_x4;
+
+			// Store result of convolution for (fx,fy) pixel of f-th channel
+			_mm256_storeu_ps( dstPtr, r0 );
+			_mm256_storeu_ps( dstPtr + FC, r1 );
+			_mm256_storeu_ps( dstPtr + 2 * FC, r2 );
+			_mm256_storeu_ps( dstPtr + 3 * FC, r3 );
+			dstPtr += FC_x4;
+		};
+		Process( ft0 );
+		Process( ft1 );
+		Process( ft2 );
 	};
 
 	auto ApplyWholeFilter3x3_24ch = [&]( const float* srcPtr, const float* fltPtr, float* dstPtr  ) {
@@ -913,12 +930,47 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 			_mm256_storeu_ps( dstPtr + 40, r12 );
 	};
 
+	auto ApplyWholeFilter3x3_24ch_x4 = [&]( const float* srcPtr, const float* fltPtr, float* dstPtr  ) {
+
+		auto Process = [&]( const __m256& ft ) {
+			const float* tempSrcPtr = srcPtr;
+
+			__m256 r0 = ft;
+			__m256 r1 = ft;
+			__m256 r2 = ft;
+			__m256 r3 = ft;
+
+			for( int fy = 0; fy < FH; fy++ ) {
+				for( int fx = 0; fx < FW; fx++ ) {
+					ProcessChannels_avx2_x4( tempSrcPtr, fltPtr, r0, r1, r2, r3 );
+					// Move to next pixel in source image on the SAME line
+					tempSrcPtr += SrcXDilation;
+					fltPtr += C * FC_x4;
+				}
+				// Move to next pixel in source image on the NEXT line
+				tempSrcPtr += SrcYDilation - SrcXWindowSize;
+			}
+
+			// Store result of convolution for (fx,fy) pixel of f-th channel
+			_mm256_storeu_ps( dstPtr, r0 );
+			_mm256_storeu_ps( dstPtr + FC, r1 );
+			_mm256_storeu_ps( dstPtr + 2 * FC, r2 );
+			_mm256_storeu_ps( dstPtr + 3 * FC, r3 );
+			dstPtr += FC_x4;
+		};
+		Process( ft0 );
+		Process( ft1 );
+		Process( ft2 );
+	};
+
 	// Iterate through result, left->right, top->bottom
 	// Top edge ( cut top part of filter )
 	const float* fltPtr = flt;
+	const float* fltPtr_x4 = flt_x4;
 	float* dstPtr = dst;
 	// We process all central pixels be pairs. In case the total count of central pixels is odd we will process last one separately.
-	bool ProcessLastOddFilter = ( RW - PartialStepCountAfter - PartialStepCountBefore ) % 2 != 0;
+	bool ProcessLastOnePixel = ( RW - PartialStepCountAfter - PartialStepCountBefore ) % 2 != 0;
+	bool ProcessLastTwoPixels = ( RW - PartialStepCountAfter - PartialStepCountBefore ) % 4 >= 2;
 
 	t1.Start();
 	for( int ry = 0; ry < PartialStepCountBefore; ry++ ) {
@@ -932,15 +984,22 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 			srcPtr += SrcXStep;
 			dstPtr += FC;
 		}
-		for( int rx = PartialStepCountBefore; rx <= RW - PartialStepCountAfter - 2; rx += 2 ) {
+
+		for( int rx = PartialStepCountBefore; rx <= RW - PartialStepCountAfter - 4; rx += 4 ) {
 			// Top edge, 3 4 5 6 7 8
+			ApplyPartitialFilter3x3_24ch_x4( srcPtr, SrcPixelOffset[1], fltPtr_x4, FltPixels_x4[1], dstPtr );
+			srcPtr += 4 * SrcXStep;
+			dstPtr += 4 * FC;
+		}
+		if( ProcessLastTwoPixels ) {
 			ApplyPartitialFilter3x3_24ch_x2( srcPtr, SrcPixelOffset[1], fltPtr, FltPixels[1], dstPtr );
 			srcPtr += 2 * SrcXStep;
 			dstPtr += 2 * FC;
 		}
-		if( ProcessLastOddFilter ) {
+		if( ProcessLastOnePixel ) {
 			ApplyPartitialFilter3x3_24ch( srcPtr, SrcPixelOffset[1], fltPtr, FltPixels[1], dstPtr );
-			dstPtr +=  FC;
+			srcPtr += SrcXStep;
+			dstPtr += FC;
 		}
 
 		for( int rx = RW - PartialStepCountAfter; rx < RW; rx++ ) {
@@ -964,20 +1023,23 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 			dstPtr += FC;
 		}
 
-
 		// Move to the top left pixel of window from central one
 		srcPtr -= ( SrcYDilation + SrcXDilation);
-		for( int rx = PartialStepCountBefore; rx <= RW - PartialStepCountAfter - 2; rx += 2 ) {
+		for( int rx = PartialStepCountBefore; rx <= RW - PartialStepCountAfter - 4; rx += 4 ) {
 			// Top edge, 3 4 5 6 7 8
+			ApplyWholeFilter3x3_24ch_x4( srcPtr, fltPtr_x4, dstPtr );
+			srcPtr += 4 * SrcXStep;
+			dstPtr += 4 * FC;
+		}
+		if( ProcessLastTwoPixels ) {
 			ApplyWholeFilter3x3_24ch_x2( srcPtr, fltPtr, dstPtr );
 			srcPtr += 2 * SrcXStep;
 			dstPtr += 2 * FC;
 		}
-		if( ProcessLastOddFilter ) {
+		if( ProcessLastOnePixel ) {
 			ApplyWholeFilter3x3_24ch( srcPtr, fltPtr, dstPtr );
 			dstPtr +=  FC;
 		}
-
 
 		// Move back to the central pixel again
 		srcPtr += ( SrcYDilation + SrcXDilation);
@@ -1001,15 +1063,22 @@ void CCpuMathEngine::MegaFastConvolutionAlgo( const CCpuConvolutionDesc& desc, c
 			srcPtr += SrcXStep;
 			dstPtr += FC;
 		}
-		for( int rx = PartialStepCountBefore; rx <= RW - PartialStepCountAfter - 2; rx += 2 ) {
+
+		for( int rx = PartialStepCountBefore; rx <= RW - PartialStepCountAfter - 4; rx += 4 ) {
 			// Top edge, 3 4 5 6 7 8
+			ApplyPartitialFilter3x3_24ch_x4( srcPtr, SrcPixelOffset[5], fltPtr_x4, FltPixels_x4[5], dstPtr );
+			srcPtr += 4 * SrcXStep;
+			dstPtr += 4 * FC;
+		}
+		if( ProcessLastTwoPixels ) {
 			ApplyPartitialFilter3x3_24ch_x2( srcPtr, SrcPixelOffset[5], fltPtr, FltPixels[5], dstPtr );
 			srcPtr += 2 * SrcXStep;
 			dstPtr += 2 * FC;
 		}
-		if( ProcessLastOddFilter ) {
+		if( ProcessLastOnePixel ) {
 			ApplyPartitialFilter3x3_24ch( srcPtr, SrcPixelOffset[5], fltPtr, FltPixels[5], dstPtr );
-			dstPtr +=  FC;
+			srcPtr += SrcXStep;
+			dstPtr += FC;
 		}
 
 		for( int rx = RW - PartialStepCountAfter; rx < RW; rx++ ) {

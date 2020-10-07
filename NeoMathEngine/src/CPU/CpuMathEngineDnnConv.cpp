@@ -23,6 +23,7 @@ limitations under the License.
 #include <MemoryHandleInternal.h>
 #include <MathEngineDnnConv.h>
 #include <CpuMathEnginePrivate.h>
+#include <NeoMathEngine/Timer.h>
 
 namespace NeoML {
 
@@ -516,18 +517,41 @@ void CCpuMathEngine::BlobConvolution( const CConvolutionDesc& convDesc, const CF
 				static_cast<int64_t>( desc.Result.BlobSize() ) * desc.Filter.ObjectSize() ) ? threadCount : 1;
 			const int64_t algo1DataSize = static_cast<int64_t>( desc.Result.Width() ) * desc.Result.Height() * desc.Filter.ObjectSize() + desc.Result.ObjectSize();
 
+			CTimer t0, t1, t2;
+			int branch;
+
 			if( CAvxDll::GetInstance().IsAvailable() &&
 				( desc.Filter.Channels() == 24 ) &&
 				( desc.Filter.ObjectCount() == 24 ) &&
 				( desc.Filter.Width() == 3 ) &&
 				( desc.Filter.Height() == 3 ) &&
 				( desc.PaddingWidth == desc.DilationWidth ) ) {
+				
+
+				t0.Start();
 				CAvxDll::GetInstance().CallBlobConvolution_avx_f3x3_c24_fc24( mathEngine(), threadCount, desc, sourceRaw, filterRaw, freeTermRaw, resultRaw );
+				t0.Stop();
+				
+				t1.Start();
+				if( min( desc.Result.ObjectCount(), algo1ThreadCount ) * algo1DataSize <= algo0ThreadCount * BlobConvolutionCacheSize ) {
+					blobConvolutionForwardAlgo1( desc, sourceRaw, filterRaw, freeTerm, resultRaw );
+				} else {
+					blobConvolutionForwardAlgo0( desc, sourceRaw, filterRaw, freeTerm, resultRaw );
+				}
+				t1.Stop();
+				branch = 0;
 			} else if( min( desc.Result.ObjectCount(), algo1ThreadCount ) * algo1DataSize <= algo0ThreadCount * BlobConvolutionCacheSize ) {
+				t2.Start();
 				blobConvolutionForwardAlgo1( desc, sourceRaw, filterRaw, freeTerm, resultRaw );
+				t2.Stop();
+				branch = 1;
 			} else {
+				t2.Start();
 				blobConvolutionForwardAlgo0( desc, sourceRaw, filterRaw, freeTerm, resultRaw );
+				t2.Stop();
+				branch = 2;
 			}
+			CAlgoInfo::AddFastAlgo( { { t0, t1, t2 }, { desc.Source.Width(), desc.Source.Height(), desc.Filter.Width(), desc.Filter.Height(), desc.DilationWidth, desc.PaddingWidth, desc.Filter.Channels(), desc.Filter.ObjectCount(), branch } } );
 			break;
 		}
 		case CA_1x1:

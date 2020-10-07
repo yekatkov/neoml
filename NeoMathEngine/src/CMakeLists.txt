@@ -44,6 +44,7 @@ target_sources(${PROJECT_NAME}
     CPU/CpuRandom.h
     CPU/CpuMathEnginePrivate.h
     CPU/CpuMathEngineOmp.h
+    Timer.cpp
 
     CPU/MatrixMultiplyingInterleavedCommon/CpuMemoryHelper.h
     CPU/MatrixMultiplyingInterleavedCommon/MatrixMultiplier.h
@@ -59,6 +60,7 @@ target_sources(${PROJECT_NAME}
     ../include/NeoMathEngine/MemoryHandle.inl
     ../include/NeoMathEngine/SparseMatrixDesc.h
     ../include/NeoMathEngine/NeoMathEngine.h
+	../include/NeoMathEngine/Timer.h
 )
 
 add_library(NeoML::${PROJECT_NAME} ALIAS ${PROJECT_NAME})

@@ -13,6 +13,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 --------------------------------------------------------------------------------------------------------------*/
 
+#if FINE_PLATFORM( FINE_WINDOWS )
+#include <intrin.h>
+#elif FINE_PLATFORM(FINE_LINUX) || FINE_PLATFORM(FINE_DARWIN) || FINE_PLATFORM(FINE_ANDROID)
+#include <x86intrin.h>
+#else
+#error "Platform isn't supported!"
+#endif
+
 #include <array>
 #include <vector>
 #include <climits>

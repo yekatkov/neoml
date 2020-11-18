@@ -22,12 +22,4 @@ limitations under the License.
 
 #include <NeoMathEngine/NeoMathEngine.h>
 
-#if FINE_PLATFORM( FINE_WINDOWS )
-#include <intrin.h>
-#elif FINE_PLATFORM( FINE_LINUX ) || FINE_PLATFORM( FINE_DARWIN )
-#include <x86intrin.h>
-#else
-#error "Platform isn't supported!"
-
-#endif
 using namespace std;

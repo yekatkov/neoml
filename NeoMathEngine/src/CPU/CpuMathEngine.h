@@ -495,6 +495,9 @@ private:
 	void multiplyMatrixByTransposedMatrix( const float* first, int firstHeight,
 		int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
 		float* result, int resultRowSize );
+	void multiplyMatrixByTransposedMatrix_custom( const float* first, int firstHeight,
+		int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
+		float* result, int resultRowSize );
 	void batchMultiplyMatrixByTransposedMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle );
 	void multiplyMatrixByTransposedMatrixAndAdd( const float* first, int firstHeight, int firstWidth, int firstRowSize,

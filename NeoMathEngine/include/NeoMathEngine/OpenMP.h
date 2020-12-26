@@ -35,10 +35,10 @@ limitations under the License.
 	#define NEOML_OMP_FOR_NUM_THREADS( threadCount ) _Pragma( STRINGIFY( omp parallel for num_threads( threadCount ) if( threadCount > 1 ) ) )
 	#endif
 #else
-	#define NEOML_OMP(cond, x)  { const bool __attribute__((unused)) tempCond = cond; }
-	#define NEOML_OMP_BARRIER(cond)  { const bool __attribute__((unused)) tempCond = cond; }
-	#define NEOML_OMP_NUM_THREADS( threadCount ) { const int __attribute__((unused)) tempThreadCount = threadCount; }
-	#define NEOML_OMP_FOR_NUM_THREADS( threadCount ) { const int __attribute__((unused)) tempThreadCount = threadCount; }
+	#define NEOML_OMP(cond, x)
+	#define NEOML_OMP_BARRIER(cond)
+	#define NEOML_OMP_NUM_THREADS( threadCount )
+	#define NEOML_OMP_FOR_NUM_THREADS( threadCount )
 #endif // NEOML_USE_OMP
 
 namespace NeoML {

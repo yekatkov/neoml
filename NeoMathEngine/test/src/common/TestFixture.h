@@ -63,7 +63,12 @@ inline bool FloatEq(float val1, float val2, float precision = 1e-05)
 		return true;
 	}
 
-	return abs(val1 - val2) < precision || abs((val1 - val2) / (val2 == 0 ? FLT_EPSILON : val2)) < precision;
+	bool res = abs(val1 - val2) < precision || abs((val1 - val2) / (val2 == 0 ? FLT_EPSILON : val2)) < precision;
+	if( res ) {
+		return true;
+	} else {
+		return false;
+	}
 }
 
 //------------------------------------------------------------------------------------------------------------

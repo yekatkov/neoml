@@ -36,7 +36,7 @@ target_compile_definitions(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME} PRIVATE NeoMathEngine)
 
 # OpenMP
-link_openmp(${PROJECT_NAME})
+#link_openmp(${PROJECT_NAME})
 
 # AVX
 if(WIN32)

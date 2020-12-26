@@ -55,6 +55,86 @@ template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBa
 using CMicroKernelDefault = CMicroKernelBase<1, 1>;
 template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBase<Transpose, Len>;
 
+struct CMicroKernel_4x24 : public CMicroKernelBase<4, 24> {
+	static void Calculate( const float* aPtr, const float* bPtr, float* cPtr, size_t cRowSize, size_t k )
+	{
+        __m256 c00 = _mm256_setzero_ps();
+        __m256 c01 = _mm256_setzero_ps();
+        __m256 c02 = _mm256_setzero_ps();
+        __m256 c10 = _mm256_setzero_ps();
+        __m256 c11 = _mm256_setzero_ps();
+        __m256 c12 = _mm256_setzero_ps();
+        __m256 c20 = _mm256_setzero_ps();
+        __m256 c21 = _mm256_setzero_ps();
+        __m256 c22 = _mm256_setzero_ps();
+        __m256 c30 = _mm256_setzero_ps();
+        __m256 c31 = _mm256_setzero_ps();
+        __m256 c32 = _mm256_setzero_ps();
+        __m256 b0, b1, b2, a;
+        for( int l = 0; l < k; l++ ) {
+            a = _mm256_broadcast_ss( aPtr + 0 );
+            b0 = _mm256_loadu_ps( bPtr + 0 );
+            b1 = _mm256_loadu_ps( bPtr + 8 );
+            b2 = _mm256_loadu_ps( bPtr + 16 );
+            c00 = _mm256_fmadd_ps( a, b0, c00 );
+            c01 = _mm256_fmadd_ps( a, b1, c01 );
+            c02 = _mm256_fmadd_ps( a, b2, c02 );
+            a = _mm256_broadcast_ss( aPtr + 1 );
+            c10 = _mm256_fmadd_ps( a, b0, c10 );
+            c11 = _mm256_fmadd_ps( a, b1, c11 );
+            c12 = _mm256_fmadd_ps( a, b2, c12 );
+            a = _mm256_broadcast_ss( aPtr + 2 );
+            c20 = _mm256_fmadd_ps( a, b0, c20 );
+            c21 = _mm256_fmadd_ps( a, b1, c21 );
+            c22 = _mm256_fmadd_ps( a, b2, c22 );
+            a = _mm256_broadcast_ss( aPtr + 3 );
+            c30 = _mm256_fmadd_ps( a, b0, c30 );
+            c31 = _mm256_fmadd_ps( a, b1, c31 );
+            c32 = _mm256_fmadd_ps( a, b2, c32 );
+            bPtr += 24; aPtr += 4;
+        }
+
+        _mm256_storeu_ps( cPtr + 0, _mm256_add_ps( c00, _mm256_loadu_ps( cPtr + 0 ) ) );
+        _mm256_storeu_ps( cPtr + 8, _mm256_add_ps( c01, _mm256_loadu_ps( cPtr + 8 ) ) );
+        _mm256_storeu_ps( cPtr + 16, _mm256_add_ps( c02, _mm256_loadu_ps( cPtr + 16 ) ) );
+        cPtr += cRowSize;
+        _mm256_storeu_ps( cPtr + 0, _mm256_add_ps( c10, _mm256_loadu_ps( cPtr + 0 ) ) );
+        _mm256_storeu_ps( cPtr + 8, _mm256_add_ps( c11, _mm256_loadu_ps( cPtr + 8 ) ) );
+        _mm256_storeu_ps( cPtr + 16, _mm256_add_ps( c12, _mm256_loadu_ps( cPtr + 16 ) ) );
+        cPtr += cRowSize;
+        _mm256_storeu_ps( cPtr + 0, _mm256_add_ps( c20, _mm256_loadu_ps( cPtr + 0 ) ) );
+        _mm256_storeu_ps( cPtr + 8, _mm256_add_ps( c21, _mm256_loadu_ps( cPtr + 8 ) ) );
+        _mm256_storeu_ps( cPtr + 16, _mm256_add_ps( c22, _mm256_loadu_ps( cPtr + 16 ) ) );
+        cPtr += cRowSize;
+        _mm256_storeu_ps( cPtr + 0, _mm256_add_ps( c30, _mm256_loadu_ps( cPtr + 0 ) ) );
+        _mm256_storeu_ps( cPtr + 8, _mm256_add_ps( c31, _mm256_loadu_ps( cPtr + 8 ) ) );
+        _mm256_storeu_ps( cPtr + 16, _mm256_add_ps( c32, _mm256_loadu_ps( cPtr + 16 ) ) );
+
+        //_mm256_storeu_ps( cPtr + 0, c00 ); // _mm256_add_ps( c00, _mm256_loadu_ps( cPtr + 0 ) ) );
+        //_mm256_storeu_ps( cPtr + 8, c01 ); // _mm256_add_ps( c01, _mm256_loadu_ps( cPtr + 8 ) ) );
+        //_mm256_storeu_ps( cPtr + 16, c02 ); // _mm256_add_ps( c02, _mm256_loadu_ps( cPtr + 16 ) ) );
+        //cPtr += cRowSize;
+        //_mm256_storeu_ps( cPtr + 0, c10 ); // _mm256_add_ps( c10, _mm256_loadu_ps( cPtr + 0 ) ) );
+        //_mm256_storeu_ps( cPtr + 8, c11 ); // _mm256_add_ps( c11, _mm256_loadu_ps( cPtr + 8 ) ) );
+        //_mm256_storeu_ps( cPtr + 16, c12 ); // _mm256_add_ps( c12, _mm256_loadu_ps( cPtr + 16 ) ) );
+        //cPtr += cRowSize;
+        //_mm256_storeu_ps( cPtr + 0, c20 ); // _mm256_add_ps( c20, _mm256_loadu_ps( cPtr + 0 ) ) );
+        //_mm256_storeu_ps( cPtr + 8, c21 ); // _mm256_add_ps( c21, _mm256_loadu_ps( cPtr + 8 ) ) );
+        //_mm256_storeu_ps( cPtr + 16, c22 ); // _mm256_add_ps( c22, _mm256_loadu_ps( cPtr + 16 ) ) );
+        //cPtr += cRowSize;
+        //_mm256_storeu_ps( cPtr + 0, c30 ); // _mm256_add_ps( c30, _mm256_loadu_ps( cPtr + 0 ) ) );
+        //_mm256_storeu_ps( cPtr + 8, c31 ); // _mm256_add_ps( c31, _mm256_loadu_ps( cPtr + 8 ) ) );
+        //_mm256_storeu_ps( cPtr + 16, c32 ); // _mm256_add_ps( c32, _mm256_loadu_ps( cPtr + 16 ) ) );
+
+		//for( size_t i = 0; i < height; ++i ) {
+		//	for( size_t j = 0; j < width; ++j ) {
+		//		for( size_t l = 0; l < k; ++l ) {
+		//			cPtr[i * cRowSize + j] += aPtr[l * height + i] * bPtr[l * width + j];
+		//		}
+		//	}
+		//}
+	}
+};
 #endif
 
 template<bool ATransposed, bool BTransposed, class MemoryHandler, class Engine, class CCPUInfo>
@@ -64,6 +144,11 @@ inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 	float* cPtr, size_t cRowSize,
 	size_t m, size_t n, size_t k)
 {
-	CMatrixMultiplier<CMicroKernelDefault, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
-		(engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k);
+	if( m % 4 == 0 && n % 24 == 0 ) {
+		CMatrixMultiplier<CMicroKernel_4x24, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
+		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
+	} else {
+		CMatrixMultiplier<CMicroKernelDefault, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
+		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
+	}
 }

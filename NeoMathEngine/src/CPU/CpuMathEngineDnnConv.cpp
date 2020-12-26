@@ -24,6 +24,7 @@ limitations under the License.
 #include <MathEngineDnnConv.h>
 #include <CpuMathEnginePrivate.h>
 #include <NeoMathEngine/SimdMathEngine.h>
+#include <NeoMathEngine/Timer.h>
 
 namespace NeoML {
 
@@ -33,10 +34,11 @@ enum TConvAlgo {
 	CA_1,		// use a temporary matrix to store the data in another order
 	CA_2,		// work with the data directly (only for stride = 1 and padding = 0)
 				// most efficient when the image is large and especially when it has many channels
-				
+
 	CA_1x1		// for convolution with a 1*1 filter, no padding and dilation (both 2D and 3D)
 };
 
+// TODO: L2 cache size ( get from CPU info ! )
 const int BlobConvolutionCacheSize = 256 * 1024;
 
 // Convolution descriptor
@@ -67,7 +69,7 @@ inline TConvAlgo CCpuConvolutionDesc::getActualForwardAlgo() const
 	{
 		return CA_1x1;
 	}
-	
+
 	if( DilationHeight == 1 && DilationWidth == 1 && StrideHeight == 1 && StrideWidth == 1 ) {
 		if( PaddingHeight > 0 || PaddingWidth > 0 ) {
 			if( ( Source.Height() >= 64 && Source.Width() >= 64 && Source.Depth() * Source.Channels() >= 8 ) ||
@@ -173,7 +175,7 @@ void CCpuMathEngine::createDilationTemporaryBlob( const CCpuConvolutionDesc& des
 				// The current row is all padding
 				continue;
 			}
-			
+
 			float* tempRow = tempBlobPtr + ( ( outputColumn - outputColumnStart ) * output.Height() + outputRow )
 				* filter.Height() * filter.Width() * vectorSize;
 
@@ -276,12 +278,12 @@ void CCpuMathEngine::createTemporaryBlob( const TConvolutionDesc& desc, const fl
 			}
 			// The paddingBottom now has only the bottom padding rows that are in the filter area
 
-			// Copy the rows that are in filter area 
+			// Copy the rows that are in filter area
 			// If strideHeight <= filterHeight the intersection has already been copied above
 			// and we only need to copy additional strideHeight lower rows
-			// If strideHeight > filterHeight the rows to be ignored have been skipped already 
+			// If strideHeight > filterHeight the rows to be ignored have been skipped already
 			// and we need to copy filterHeight lower rows
-			// The intersection with the bottom padding does not need copying 
+			// The intersection with the bottom padding does not need copying
 			// because we've already filled temporaryBlob with the padding value
 			for(int l = 0; l < min(desc.StrideHeight, filter.Height()) - paddingBottom; l++) {
 				dataCopy(tempBlobPtr + paddingLeft, currentWindowStart + paddingLeft,
@@ -290,7 +292,7 @@ void CCpuMathEngine::createTemporaryBlob( const TConvolutionDesc& desc, const fl
 				tempBlobPtr += windowRowSize;
 			}
 
-			// temporaryBlob already filled with the padding value, so we only need to 
+			// temporaryBlob already filled with the padding value, so we only need to
 			// offset the pointer by the number of bottom padding elements that fit into the filter area
 			tempBlobPtr += paddingBottom * windowRowSize;
 		}
@@ -395,11 +397,17 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 {
 	const int resultItemCount = desc.Result.ObjectCount() * desc.Result.Width() * desc.Result.Height();
 	const int curThreadCount = IsOmpRelevant( resultItemCount, static_cast< int64_t >( desc.Result.BlobSize() ) * desc.Filter.ObjectSize() ) ? threadCount : 1;
-	const int cacheItemCount = max( 1, min( ceilTo( BlobConvolutionCacheSize / desc.Filter.ObjectSize(), 16 ), resultItemCount / curThreadCount ) );
+	// Нужно округлять вниз!!!!
+	const int cacheItemCount = max( 1, min( ceilTo( BlobConvolutionCacheSize / desc.Filter.ObjectSize(), 16 ), resultItemCount / curThreadCount ) ) / 4 * 4;
+	// Превышает размер кэша L2!!!!
 	const int tempDataSize = curThreadCount * cacheItemCount * desc.Filter.ObjectSize();
+
+	CTimer t0, t1;
 
 	CFloatHandleStackVar tempData( mathEngine(), tempDataSize );
 	float* tempDataRaw = GetRaw( tempData.GetHandle() );
+	CFloatHandleStackVar R( mathEngine(), desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount() );
+	float* rRaw = GetRaw( R.GetHandle() );
 
 	NEOML_OMP_NUM_THREADS( curThreadCount )
 	{
@@ -417,13 +425,25 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 				fillTempData( sourceData, tempDataPtr, desc, start + index, size );
 
 				float* resultDataPtr = resultData + ( start + index ) * filterObjectCount;
+				float* rDataPtr = rRaw + ( start + index ) * filterObjectCount;
 
+				t0.Start();
 				multiplyMatrixByTransposedMatrix( tempDataPtr, size, filterObjectSize,
 					filterObjectSize, filterData, filterObjectCount, filterObjectSize, resultDataPtr,
 					filterObjectCount );
+				t0.Stop();
+
+				t1.Start();
+				multiplyMatrixByTransposedMatrix_custom( tempDataPtr, size, filterObjectSize,
+					filterObjectSize, filterData, filterObjectCount, filterObjectSize, rDataPtr,
+					filterObjectCount );
+				t1.Stop();
 
 				if( freeTermData != nullptr ) {
-					addVectorToMatrixRows( resultDataPtr, resultDataPtr, size, filterObjectCount, filterObjectCount, 
+					addVectorToMatrixRows( resultDataPtr, resultDataPtr, size, filterObjectCount, filterObjectCount,
+						filterObjectCount, GetRaw( *freeTermData ) );
+
+					addVectorToMatrixRows( rDataPtr, rDataPtr, size, filterObjectCount, filterObjectCount,
 						filterObjectCount, GetRaw( *freeTermData ) );
 				}
 
@@ -431,6 +451,20 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 			}
 		}
 	}
+
+	float* f1 = rRaw;
+	float* f2 = resultData;
+	for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
+		const float e = max(abs(*f2 / 1e3), 5e-3 );
+		const float sub = *f1 - *f2;
+		ASSERT_EXPR( sub > -e && sub < e );
+		f1++;
+		f2++;
+	}
+
+	ASSERT_EXPR( desc.Result.Width() == desc.Source.Width() );
+	ASSERT_EXPR( desc.Result.Height() == desc.Source.Height() );
+	CAlgoInfo::AddInfo( { { t0, t1 }, { desc.Source.Width(), desc.Source.Height(), desc.Filter.Channels(), desc.Filter.ObjectCount() } }, 0 );
 }
 
 void CCpuMathEngine::blobConvolutionForwardAlgo1( const CCpuConvolutionDesc& desc, const float* sourceData,
@@ -700,7 +734,7 @@ void CCpuMathEngine::backwardDilationConvolutionAddFilterToOutput( const CCpuCon
 					}
 				}
 				sourceHPos++;
-			} 
+			}
 		}
 	}
 }
@@ -904,7 +938,7 @@ void CCpuMathEngine::blobConvolutionLearnAlgo1( const CCpuConvolutionDesc& desc,
 	const CBlobDesc& input = desc.Source;
 	const CBlobDesc& filterDiff = desc.Filter;
 	const CBlobDesc& outputDiff = desc.Result;
-	
+
 	ASSERT_EXPR( filterDiff.Depth() == input.Depth() );
 	ASSERT_EXPR( filterDiff.Channels() == input.Channels() );
 
@@ -1104,7 +1138,7 @@ void CCpuMathEngine::BlobConvolutionLearnAdd( const CConvolutionDesc& convDesc, 
 //------------------------------------------------------------------------------------------------------------
 
 CChannelwiseConvolutionDesc* CCpuMathEngine::InitBlobChannelwiseConvolution( const CBlobDesc& source,
-	int paddingHeight, int paddingWidth, int strideHeight, int strideWidth, 
+	int paddingHeight, int paddingWidth, int strideHeight, int strideWidth,
 	const CBlobDesc& filter, const CBlobDesc* freeTerm, const CBlobDesc& result )
 {
 	ASSERT_EXPR(source.Depth() == 1);

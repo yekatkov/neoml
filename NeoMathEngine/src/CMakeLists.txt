@@ -44,6 +44,7 @@ target_sources(${PROJECT_NAME}
     CPU/CpuRandom.h
     CPU/CpuMathEnginePrivate.h
     CPU/CpuMathEngineOmp.h
+    Timer.cpp
 
     CPU/MatrixMultiplyingInterleavedCommon/CpuMemoryHelper.h
     CPU/MatrixMultiplyingInterleavedCommon/MatrixMultiplier.h
@@ -61,6 +62,7 @@ target_sources(${PROJECT_NAME}
     ../include/NeoMathEngine/NeoMathEngine.h
     ../include/NeoMathEngine/NeoMathEngineException.h
     ../include/NeoMathEngine/SimdMathEngine.h
+    ../include/NeoMathEngine/Timer.h
 )
 
 add_library(NeoML::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -146,7 +148,7 @@ else()
 endif()
 
 # GPU specific source and settings
-if((WIN32 OR LINUX) AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+if(FALSE)
 
     if(USE_FINE_OBJECTS)
         # The CUDA must exist at $ENV{ROOT}/ThirdParty
@@ -344,13 +346,13 @@ endif()
 
 
 # OpenMP
-link_openmp(${PROJECT_NAME})
+#link_openmp(${PROJECT_NAME})
 
 # SSE2
 if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_compile_options(${PROJECT_NAME} PRIVATE /arch:SSE2)
 elseif(LINUX OR DARWIN OR (ANDROID AND ANDROID_ABI MATCHES "^x86.*") OR (IOS_ARCH MATCHES "^x86.*"))
-    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-msse2>)
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2 -mfma>)
 endif()
 
 # Arm neon

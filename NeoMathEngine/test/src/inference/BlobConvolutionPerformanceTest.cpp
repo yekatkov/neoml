@@ -21,6 +21,22 @@ using namespace NeoML;
 using namespace NeoMLTest;
 using namespace std::chrono;
 
+
+const std::string& PrintTimers( int idx, const char* head, const char* tag );
+const std::string& PrintCountedInfo( int idx, const char* idxTag, const char* head1, const char* head2, const char* tag );
+
+void PrintTimersWrapper( int idx, const char* head, const char* tag )
+{
+	//GTEST_LOG_( INFO ) << PrintTimers( idx, head, tag );
+}
+
+void PrintCountedInfoWrapper( const char* tag, bool print = true )
+{
+	if( print ) {
+		GTEST_LOG_( INFO ) << PrintTimers( 0, "t0;t1;SW;SH;C;FC", tag );
+	}
+}
+
 static inline int calcConvOutputSize( int input, int padding, int filter, int dilation, int stride )
 {
 	return  1 + ( input - ( filter - 1 ) * dilation + 2 * padding - 1 ) / stride;
@@ -144,8 +160,9 @@ static void blobConvolutionImpl( const CTestParams& params, int seed )
 		dilationHeight, dilationWidth, strideHeight, strideWidth );
 
 	for( int i = 0; i < outputSize; ++i ) {
-		ASSERT_TRUE( FloatEq( expectedData[i], actualData[i] ) );
+		ASSERT_TRUE( FloatEq( expectedData[i], actualData[i], 5e-03 ) );
 	}
+	PrintCountedInfoWrapper( "_info_" );
 }
 
 //------------------------------------------------------------------------------------------------------------
@@ -154,6 +171,12 @@ class CMathEngineBlobConvolutionPerformanceTest : public CTestFixtureWithParams 
 };
 // PaddingHeight | PaddingWidth | StrideHeight | StrideWidth | DilationHeight | DilationWidth | ObjectHeight | ObjectWidth | NumChannels | ObjectCount | FiltHeight | FiltWidth | IsFreeTerm
 CTestParams TestParams[] = {
+	CTestParams( "ConvParams = { 1, 1, 1, 1, 1, 1, 240, 300, 24, 1, 3, 3, 1 }; TestCount = 1;" ),
+	CTestParams( "ConvParams = { 1, 1, 1, 1, 1, 1, 240, 300, 48, 1, 3, 3, 1 }; TestCount = 1;" ),
+	CTestParams( "ConvParams = { 1, 1, 1, 1, 1, 1, 240, 300, 72, 1, 3, 3, 1 }; TestCount = 1;" ),
+	CTestParams( "ConvParams = { 1, 1, 1, 1, 1, 1, 240, 300, 96, 1, 3, 3, 1 }; TestCount = 1;" ),
+	CTestParams( "ConvParams = { 1, 1, 1, 1, 1, 1, 240, 300, 120, 1, 3, 3, 1 }; TestCount = 1;" )
+	/*
 	CTestParams( "ConvParams = { 0, 0, 1, 1, 1, 1, 12, 12, 16, 1, 3, 3, 1 }; TestCount = 1;" ),
 	CTestParams( "ConvParams = { 0, 0, 1, 1, 1, 1, 25, 25, 1, 1, 5, 5, 1 }; TestCount = 1;" ),
 	CTestParams( "ConvParams = { 0, 0, 1, 1, 1, 1, 9, 9, 24, 1, 3, 3, 1 }; TestCount = 1;" ),
@@ -221,6 +244,7 @@ CTestParams TestParams[] = {
 	CTestParams( "ConvParams = { 8, 8, 1, 1, 8, 8, 256, 256, 24, 1, 3, 3, 1 }; TestCount = 1;" ),
 	CTestParams( "ConvParams = { 8, 8, 1, 1, 8, 8, 256, 256, 64, 1, 3, 3, 1 }; TestCount = 1;" ),
 	CTestParams( "ConvParams = { 8, 8, 1, 1, 8, 8, 256, 256, 96, 1, 3, 3, 1 }; TestCount = 1;" )
+	*/
 };
 // PaddingHeight | PaddingWidth | StrideHeight | StrideWidth | DilationHeight | DilationWidth | ObjectWidth | ObjectHeight | NumChannels | ObjectCount | FiltWidth | FiltHeight | IsFreeTerm
 INSTANTIATE_TEST_CASE_P( CMathEngineBlobConvolutionPerformanceTestInstantiation, CMathEngineBlobConvolutionPerformanceTest,

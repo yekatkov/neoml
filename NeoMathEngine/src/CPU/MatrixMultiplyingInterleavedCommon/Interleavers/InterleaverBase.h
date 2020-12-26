@@ -15,6 +15,8 @@ limitations under the License.
 
 #pragma once
 
+#include <immintrin.h>
+#include <algorithm>
 #include <cstring>
 
 // Prepare the submatrix and write it into a temporary buffer
@@ -207,6 +209,82 @@ struct CInterleaverBase<true, Len> {
 			const size_t len = (Len - height) * sizeof(float);
 			for( ; width > 0; --width ) {
 				memset(out, 0, len);
+				out += Len;
+			}
+		}
+	}
+};
+
+// Prepare and transpose the matrix
+template<>
+struct CInterleaverBase<true, 4> {
+	static void Prepare( float* out, const float* in, size_t stride, size_t width, size_t height )
+	{
+		const int Len = 4;
+
+		const size_t iStep = stride * Len;
+		const size_t oStep = width * Len;
+
+		for( ; height >= Len; height -= Len ) {
+			int tempWidth = width;
+			const float* tempIn = in;
+			float* tempOut = out;
+			for( ; tempWidth >= 8; tempWidth -= 8 ) {
+				__m256 a = _mm256_loadu_ps( tempIn + 0 * stride );
+				__m256 b = _mm256_loadu_ps( tempIn + 1 * stride );
+				__m256 c = _mm256_loadu_ps( tempIn + 2 * stride );
+				__m256 d = _mm256_loadu_ps( tempIn + 3 * stride );
+
+				// a:     a0 a1 a2 a3 a4 a5 a6 a7
+				// b:     b0 b1 b2 b3 b4 b5 b6 b7
+				// ab_lo: a0 b0 a1 b1 a4 b4 a5 b5
+				__m256 ab_lo = _mm256_unpacklo_ps( a, b );
+				// a:     a0 a1 a2 a3 a4 a5 a6 a7
+				// b:     b0 b1 b2 b3 b4 b5 b6 b7
+				// ab_hi: a2 b2 a3 b3 a6 b6 a7 b7
+				__m256 ab_hi = _mm256_unpackhi_ps( a, b );
+				// c:     c0 c1 c2 c3 c4 c5 c6 c7
+				// d:     d0 d1 d2 d3 d4 d5 d6 d7
+				// cd_lo: c0 d0 c1 d1 c4 d4 c5 d5
+				__m256 cd_lo = _mm256_unpacklo_ps( c, d );
+				// c:     c0 c1 c2 c3 c4 c5 c6 c7
+				// d:     d0 d1 d2 d3 d4 d5 d6 d7
+				// cd_hi: c2 d2 c3 d3 c6 d6 c7 d7
+				__m256 cd_hi = _mm256_unpackhi_ps( c, d );
+
+				// ab_lo:   a0 b0 a1 b1 a4 b4 a5 b5
+				// cd_lo:   c0 d0 c1 d1 c4 d4 c5 d5
+				// abcd_04: a0 b0 c0 d0 a4 b4 c4 d4
+				__m256 abcd_04 = _mm256_shuffle_ps( ab_lo, cd_lo, _MM_SHUFFLE( 1, 0, 1, 0 ) );
+				__m256 abcd_15 = _mm256_shuffle_ps( ab_lo, cd_lo, _MM_SHUFFLE( 3, 2, 3, 2 ) );
+				__m256 abcd_26 = _mm256_shuffle_ps( ab_hi, cd_hi, _MM_SHUFFLE( 1, 0, 1, 0 ) );
+				__m256 abcd_37 = _mm256_shuffle_ps( ab_hi, cd_hi, _MM_SHUFFLE( 3, 2, 3, 2 ) );
+
+				// __m256 abcd_01 = _mm256_permute2f128_ps( abcd_04, abcd_15, 0 | 2 << 4 );
+				_mm256_storeu_ps( tempOut + 0, _mm256_permute2f128_ps( abcd_04, abcd_15, 0 | 2 << 4 ) );
+				// __m256 abcd_23 = _mm256_permute2f128_ps( abcd_26, abcd_37, 0 | 2 << 4 );
+				_mm256_storeu_ps( tempOut + 8, _mm256_permute2f128_ps( abcd_26, abcd_37, 0 | 2 << 4 ) );
+				// __m256 abcd_45 = _mm256_permute2f128_ps( abcd_04, abcd_15, 1 | 3 << 4 );
+				_mm256_storeu_ps( tempOut + 16, _mm256_permute2f128_ps( abcd_04, abcd_15, 1 | 3 << 4 ) );
+				// __m256 abcd_67 = _mm256_permute2f128_ps( abcd_26, abcd_37, 1 | 3 << 4 );
+				_mm256_storeu_ps( tempOut + 24, _mm256_permute2f128_ps( abcd_26, abcd_37, 1 | 3 << 4 ) );
+				tempIn += 8;
+				tempOut += 32;
+			}
+			if( tempWidth != 0 ) {
+				CInterleaverBase<false, 1>::Transpose( tempOut, Len, tempIn, stride, Len, tempWidth );
+			}
+			in += iStep;
+			out += oStep;
+		}
+		height %= Len;
+
+		if( height > 0 ) {
+			CInterleaverBase<false, 1>::Transpose( out, Len, in, stride, height, width );
+			out += height;
+			const size_t len = ( Len - height ) * sizeof( float );
+			for( ; width > 0; --width ) {
+				memset( out, 0, len );
 				out += Len;
 			}
 		}

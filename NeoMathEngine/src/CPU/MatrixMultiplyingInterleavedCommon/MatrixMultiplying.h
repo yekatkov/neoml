@@ -55,6 +55,18 @@ template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBa
 using CMicroKernelDefault = CMicroKernelBase<1, 1>;
 template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBase<Transpose, Len>;
 
+void neo_sgemm_haswell_asm_6x16
+     (
+       int64_t         k0,
+       float*      alpha,
+       float*      a,
+       float*      b,
+       float*      beta,
+       float*      c, int64_t rs_c0, int64_t cs_c0,
+       void*       data,
+       void*       cntx
+     );
+
 struct CMicroKernel_4x24 : public CMicroKernelBase<4, 24> {
 	static void Calculate( const float* aPtr, const float* bPtr, float* cPtr, size_t cRowSize, size_t k )
 	{
@@ -109,30 +121,26 @@ struct CMicroKernel_4x24 : public CMicroKernelBase<4, 24> {
         _mm256_storeu_ps( cPtr + 0, _mm256_add_ps( c30, _mm256_loadu_ps( cPtr + 0 ) ) );
         _mm256_storeu_ps( cPtr + 8, _mm256_add_ps( c31, _mm256_loadu_ps( cPtr + 8 ) ) );
         _mm256_storeu_ps( cPtr + 16, _mm256_add_ps( c32, _mm256_loadu_ps( cPtr + 16 ) ) );
+	}
+};
 
-        //_mm256_storeu_ps( cPtr + 0, c00 ); // _mm256_add_ps( c00, _mm256_loadu_ps( cPtr + 0 ) ) );
-        //_mm256_storeu_ps( cPtr + 8, c01 ); // _mm256_add_ps( c01, _mm256_loadu_ps( cPtr + 8 ) ) );
-        //_mm256_storeu_ps( cPtr + 16, c02 ); // _mm256_add_ps( c02, _mm256_loadu_ps( cPtr + 16 ) ) );
-        //cPtr += cRowSize;
-        //_mm256_storeu_ps( cPtr + 0, c10 ); // _mm256_add_ps( c10, _mm256_loadu_ps( cPtr + 0 ) ) );
-        //_mm256_storeu_ps( cPtr + 8, c11 ); // _mm256_add_ps( c11, _mm256_loadu_ps( cPtr + 8 ) ) );
-        //_mm256_storeu_ps( cPtr + 16, c12 ); // _mm256_add_ps( c12, _mm256_loadu_ps( cPtr + 16 ) ) );
-        //cPtr += cRowSize;
-        //_mm256_storeu_ps( cPtr + 0, c20 ); // _mm256_add_ps( c20, _mm256_loadu_ps( cPtr + 0 ) ) );
-        //_mm256_storeu_ps( cPtr + 8, c21 ); // _mm256_add_ps( c21, _mm256_loadu_ps( cPtr + 8 ) ) );
-        //_mm256_storeu_ps( cPtr + 16, c22 ); // _mm256_add_ps( c22, _mm256_loadu_ps( cPtr + 16 ) ) );
-        //cPtr += cRowSize;
-        //_mm256_storeu_ps( cPtr + 0, c30 ); // _mm256_add_ps( c30, _mm256_loadu_ps( cPtr + 0 ) ) );
-        //_mm256_storeu_ps( cPtr + 8, c31 ); // _mm256_add_ps( c31, _mm256_loadu_ps( cPtr + 8 ) ) );
-        //_mm256_storeu_ps( cPtr + 16, c32 ); // _mm256_add_ps( c32, _mm256_loadu_ps( cPtr + 16 ) ) );
 
-		//for( size_t i = 0; i < height; ++i ) {
-		//	for( size_t j = 0; j < width; ++j ) {
-		//		for( size_t l = 0; l < k; ++l ) {
-		//			cPtr[i * cRowSize + j] += aPtr[l * height + i] * bPtr[l * width + j];
-		//		}
-		//	}
-		//}
+
+struct CMicroKernel_6x16 : public CMicroKernelBase<6, 16> {
+	static void Calculate( const float* aPtr, const float* bPtr, float* cPtr, size_t cRowSize, size_t k ) {
+		float alpha = 1.0;
+		float beta = 0.0;
+		neo_sgemm_haswell_asm_6x16
+			 (
+			   k,
+			   &alpha,
+			   const_cast<float*>(aPtr),
+			   const_cast<float*>(bPtr),
+			   &beta,
+			   cPtr, cRowSize, 1,
+			   0,
+			   0
+			 );
 	}
 };
 #endif
@@ -144,11 +152,16 @@ inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 	float* cPtr, size_t cRowSize,
 	size_t m, size_t n, size_t k)
 {
-	if( m % 4 == 0 && n % 24 == 0 ) {
-		CMatrixMultiplier<CMicroKernel_4x24, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
+//	if( m % 6 == 0 && n % 16 == 0 ) {
+//		printf("6x16\n");
+		CMatrixMultiplier<CMicroKernel_6x16, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
 		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
-	} else {
-		CMatrixMultiplier<CMicroKernelDefault, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
-		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
-	}
+//	} else if( m % 4 == 0 && n % 24 == 0 ) {
+//		printf("4x24\n");
+//		CMatrixMultiplier<CMicroKernel_4x24, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
+//		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
+//	} else {
+//		CMatrixMultiplier<CMicroKernelDefault, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
+//		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
+//	}
 }

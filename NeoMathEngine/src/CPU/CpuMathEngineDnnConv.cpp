@@ -547,6 +547,8 @@ void CCpuMathEngine::BlobConvolution( const CConvolutionDesc& convDesc, const CF
 	float* resultRaw = GetRaw( result );
 
 	const CCpuConvolutionDesc& desc = static_cast<const CCpuConvolutionDesc&>( convDesc );
+	printf("_mnk_;%d;%d;%d\n", desc.Result.Width() * desc.Result.Height(), desc.Filter.ObjectCount(), desc.Filter.ObjectSize() );
+	return;
 
 	if( desc.SimdConvolutionDesc != nullptr ) {
 		simdMathEngine->BlobConvolution( *desc.SimdConvolutionDesc, sourceRaw, filterRaw, freeTermRaw, resultRaw );

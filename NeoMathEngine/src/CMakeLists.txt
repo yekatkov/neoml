@@ -4,6 +4,29 @@ else()
     add_library(${PROJECT_NAME} STATIC common.cpp)
 endif()
 
+set(BLIS_SOURCES
+    CPU/blis/sup/sgemm_sup.cpp
+    CPU/blis/bli_gemm_haswell_asm_d6x8.cpp
+    CPU/blis/sup/bli_gemmsup_rd_haswell_asm_s6x16m.cpp
+    CPU/blis/sup/bli_gemmsup_rd_haswell_asm_s6x16n.cpp
+    CPU/blis/sup/bli_gemmsup_rv_haswell_asm_s6x16m.cpp
+    CPU/blis/sup/bli_gemmsup_rv_haswell_asm_s6x16n.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx12.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx16.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx1.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx2.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx4.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx8.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_r_haswell_ref_sMx1.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx12.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx16.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx2.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx4.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx6.cpp
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx8.cpp
+    CPU/blis/inc/blis.h
+    )
+
 target_sources(${PROJECT_NAME}
     PRIVATE
 
@@ -63,9 +86,13 @@ target_sources(${PROJECT_NAME}
     ../include/NeoMathEngine/NeoMathEngineException.h
     ../include/NeoMathEngine/SimdMathEngine.h
     ../include/NeoMathEngine/Timer.h
+    ${BLIS_SOURCES}
 )
 
+
 add_library(NeoML::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+
+set_source_files_properties(${BLIS_SOURCES} PROPERTIES COMPILE_FLAGS -fno-operator-names)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 
@@ -78,6 +105,7 @@ target_include_directories(${PROJECT_NAME}
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/CPU>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/CPU/blis/inc>
 )
 
 if(NOT USE_FINE_OBJECTS)
@@ -385,7 +413,7 @@ endif()
 if(NOT ANDROID AND NOT IOS AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86.*)|(amd64)|(AMD64)")
 
     if(USE_FINE_OBJECTS)
-        set(ENV{MKLROOT} ${FINE_ROOT}/ThirdParty/MKL/${CMAKE_SYSTEM_NAME})
+        set(ENV{MKLROOT} /home/ykatkov/soft/intel/oneapi/mkl/2021.1.1)
     endif()
 
     set(MKL_USE_STATIC_LIBS ON)

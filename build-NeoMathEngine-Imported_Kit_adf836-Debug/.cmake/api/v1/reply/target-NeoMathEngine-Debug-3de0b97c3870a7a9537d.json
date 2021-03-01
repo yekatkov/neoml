@@ -1,0 +1,799 @@
+{
+	"artifacts" : 
+	[
+		{
+			"path" : "src/libNeoMathEngine.so"
+		}
+	],
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"install",
+			"target_link_libraries",
+			"link_openmp",
+			"target_compile_options",
+			"configure_target",
+			"target_compile_definitions",
+			"target_include_directories",
+			"target_sources"
+		],
+		"files" : 
+		[
+			"src/CMakeLists.txt",
+			"/home/ykatkov/Build/NeoML/NeoML/cmake/Settings.cmake"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 2,
+				"parent" : 0
+			},
+			{
+				"command" : 1,
+				"file" : 0,
+				"line" : 430,
+				"parent" : 0
+			},
+			{
+				"command" : 3,
+				"file" : 0,
+				"line" : 367,
+				"parent" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 127,
+				"parent" : 3
+			},
+			{
+				"command" : 4,
+				"file" : 1,
+				"line" : 116,
+				"parent" : 3
+			},
+			{
+				"command" : 4,
+				"file" : 0,
+				"line" : 374,
+				"parent" : 0
+			},
+			{
+				"command" : 5,
+				"file" : 0,
+				"line" : 412,
+				"parent" : 0
+			},
+			{
+				"command" : 4,
+				"file" : 1,
+				"line" : 56,
+				"parent" : 7
+			},
+			{
+				"command" : 2,
+				"file" : 0,
+				"line" : 391,
+				"parent" : 0
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 351,
+				"parent" : 0
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 142,
+				"parent" : 0
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 392,
+				"parent" : 0
+			},
+			{
+				"command" : 6,
+				"file" : 1,
+				"line" : 114,
+				"parent" : 3
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 86,
+				"parent" : 0
+			},
+			{
+				"command" : 7,
+				"file" : 0,
+				"line" : 73,
+				"parent" : 0
+			},
+			{
+				"command" : 7,
+				"file" : 0,
+				"line" : 135,
+				"parent" : 0
+			},
+			{
+				"command" : 8,
+				"file" : 0,
+				"line" : 7,
+				"parent" : 0
+			},
+			{
+				"command" : 8,
+				"file" : 0,
+				"line" : 90,
+				"parent" : 0
+			},
+			{
+				"command" : 8,
+				"file" : 0,
+				"line" : 122,
+				"parent" : 0
+			},
+			{
+				"command" : 8,
+				"file" : 0,
+				"line" : 137,
+				"parent" : 0
+			}
+		]
+	},
+	"compileGroups" : 
+	[
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -fPIC -fvisibility=hidden  "
+				},
+				{
+					"backtrace" : 5,
+					"fragment" : "-fopenmp"
+				},
+				{
+					"backtrace" : 6,
+					"fragment" : "-msse2"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wall"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wextra"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wpedantic"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wno-deprecated-declarations"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wno-unused-value"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wno-unknown-pragmas"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wno-strict-overflow"
+				},
+				{
+					"backtrace" : 9,
+					"fragment" : "-pthread"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 10,
+					"define" : "BUILD_NEOMATHENGINE"
+				},
+				{
+					"backtrace" : 11,
+					"define" : "NEOML_USE_AVX"
+				},
+				{
+					"backtrace" : 12,
+					"define" : "NEOML_USE_MKL"
+				},
+				{
+					"backtrace" : 13,
+					"define" : "NEOML_USE_OMP"
+				},
+				{
+					"define" : "NeoMathEngine_EXPORTS"
+				},
+				{
+					"backtrace" : 10,
+					"define" : "_DEBUG"
+				},
+				{
+					"backtrace" : 14,
+					"define" : "_LINUX"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 15,
+					"path" : "/home/ykatkov/Build/NeoML/NeoML/NeoMathEngine/src/../include"
+				},
+				{
+					"backtrace" : 15,
+					"path" : "/home/ykatkov/Build/NeoML/NeoML/NeoMathEngine/src"
+				},
+				{
+					"backtrace" : 15,
+					"path" : "/home/ykatkov/Build/NeoML/NeoML/NeoMathEngine/src/CPU"
+				},
+				{
+					"backtrace" : 16,
+					"path" : "/home/ykatkov/Build/NeoML/NeoML/NeoMathEngine/src/CPU/x86"
+				},
+				{
+					"backtrace" : 9,
+					"isSystem" : true,
+					"path" : "/opt/intel/mkl/include"
+				}
+			],
+			"language" : "CXX",
+			"sourceIndexes" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8,
+				9,
+				10,
+				11,
+				12,
+				13,
+				14,
+				15,
+				16,
+				17,
+				18,
+				50,
+				51,
+				52,
+				53,
+				54,
+				55,
+				56,
+				60
+			]
+		}
+	],
+	"id" : "NeoMathEngine::@145eef247bfb46b6828c",
+	"install" : 
+	{
+		"destinations" : 
+		[
+			{
+				"backtrace" : 2,
+				"path" : "lib"
+			},
+			{
+				"backtrace" : 2,
+				"path" : "lib"
+			}
+		],
+		"prefix" : 
+		{
+			"path" : "/usr/local"
+		}
+	},
+	"link" : 
+	{
+		"commandFragments" : 
+		[
+			{
+				"fragment" : "-Wl,--no-undefined",
+				"role" : "flags"
+			},
+			{
+				"fragment" : "-Wl,-rpath,\"\\$$ORIGIN:::::::::::::::\"",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 4,
+				"fragment" : "/usr/lib/gcc/x86_64-linux-gnu/8/libgomp.so",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-lpthread",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-Wl,--start-group",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "/opt/intel/mkl/lib/intel64/libmkl_intel_lp64.a",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "/opt/intel/mkl/lib/intel64/libmkl_sequential.a",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "/opt/intel/mkl/lib/intel64/libmkl_core.a",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-Wl,--end-group",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-pthread",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-ldl",
+				"role" : "libraries"
+			}
+		],
+		"language" : "CXX"
+	},
+	"name" : "NeoMathEngine",
+	"nameOnDisk" : "libNeoMathEngine.so",
+	"paths" : 
+	{
+		"build" : "src",
+		"source" : "src"
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "Source Files",
+			"sourceIndexes" : 
+			[
+				0,
+				12,
+				13,
+				18
+			]
+		},
+		{
+			"name" : "CPU",
+			"sourceIndexes" : 
+			[
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8,
+				9,
+				10,
+				11,
+				31,
+				32,
+				33,
+				34,
+				35,
+				36,
+				37,
+				38,
+				39,
+				50
+			]
+		},
+		{
+			"name" : "Header Files\\NeoMathEngine",
+			"sourceIndexes" : 
+			[
+				14,
+				15,
+				16,
+				17,
+				19,
+				20,
+				21,
+				22,
+				23,
+				24,
+				25,
+				26,
+				27,
+				28,
+				29,
+				30,
+				40,
+				41,
+				42,
+				43,
+				44,
+				45,
+				46,
+				47,
+				48,
+				49
+			]
+		},
+		{
+			"name" : "CPU\\x86",
+			"sourceIndexes" : 
+			[
+				51,
+				52,
+				53,
+				54,
+				55,
+				56,
+				57,
+				58,
+				59,
+				60,
+				61
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/common.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineBlas.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnn3dConv.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnnConv.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnnChannelwiseConv.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnnDropout.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnn.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnnPooling.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnnRleConv.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineDnnTimeConv.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngine.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/CpuMathEngineVectorMath.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/CrtAllocatedObject.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/DllLoader.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/MathEngineDeviceStackAllocator.cpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/MathEngineDnnDropout.cpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/MathEngine.cpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/MathEngineHostStackAllocator.cpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"compileGroupIndex" : 0,
+			"path" : "src/MemoryPool.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/common.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineAllocator.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineCommon.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineDeviceStackAllocator.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineDll.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineDnnConv.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineDnnDropout.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineDnnPoolings.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MathEngineHostStackAllocator.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MemoryHandleInternal.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/MemoryPool.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/RawMemoryManager.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/CpuMathEngine.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/CpuRandom.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/CpuMathEnginePrivate.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/CpuMathEngineOmp.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/MatrixMultiplyingInterleavedCommon/CpuMemoryHelper.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/MatrixMultiplyingInterleavedCommon/MatrixMultiplier.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/MatrixMultiplyingInterleavedCommon/MatrixMultiplying.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/MatrixMultiplyingInterleavedCommon/Interleavers/InterleaverBase.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "src/CPU/MatrixMultiplyingInterleavedCommon/MicroKernels/MicroKernelBase.h",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/NeoMathEngineDefs.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/BlobDesc.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/BlobType.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/LookupData.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/MemoryHandle.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/MemoryHandle.inl",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/SparseMatrixDesc.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/NeoMathEngine.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/NeoMathEngineException.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 17,
+			"path" : "include/NeoMathEngine/SimdMathEngine.h",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 18,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/PerformanceCountersCpuLinux.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 19,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/CpuX86MathEngineBlas.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/CpuX86MathEngineBlasMkl.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/CpuX86MathEngineDnn.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/CpuX86MathEngineVectorMath.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/CpuX86MathEngineVectorMathMkl.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/CpuX86MathEngineDnn3dConv.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"path" : "src/CPU/x86/CpuX86.h",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"path" : "src/CPU/x86/CpuX86MathEngineBlasPrivate.h",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 19,
+			"path" : "src/CPU/x86/CpuX86MathEngineVectorMathPrivate.h",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 20,
+			"compileGroupIndex" : 0,
+			"path" : "src/CPU/x86/AvxDll.cpp",
+			"sourceGroupIndex" : 3
+		},
+		{
+			"backtrace" : 20,
+			"path" : "src/CPU/x86/AvxDll.h",
+			"sourceGroupIndex" : 3
+		}
+	],
+	"type" : "SHARED_LIBRARY"
+}

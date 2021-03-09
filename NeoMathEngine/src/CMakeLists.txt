@@ -4,26 +4,16 @@ else()
     add_library(${PROJECT_NAME} STATIC common.cpp)
 endif()
 
+file(GLOB BLIS_SRC1  CPU/blis/*.c)
+file(GLOB BLIS_SRC2  CPU/blis/from_blis/*.c)
+file(GLOB BLIS_SRC_SUP1 CPU/blis/sup/*.c)
+file(GLOB BLIS_SRC_SUP2 CPU/blis/sup/s6x16/*.c)
 set(BLIS_SOURCES
+    ${BLIS_SRC1}
+    ${BLIS_SRC2}
+    ${BLIS_SRC_SUP1}
+    ${BLIS_SRC_SUP2}
     CPU/blis/sup/sgemm_sup.cpp
-    CPU/blis/bli_gemm_haswell_asm_d6x8.cpp
-    CPU/blis/sup/bli_gemmsup_rd_haswell_asm_s6x16m.cpp
-    CPU/blis/sup/bli_gemmsup_rd_haswell_asm_s6x16n.cpp
-    CPU/blis/sup/bli_gemmsup_rv_haswell_asm_s6x16m.cpp
-    CPU/blis/sup/bli_gemmsup_rv_haswell_asm_s6x16n.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx12.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx16.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx1.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx2.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx4.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx8.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_r_haswell_ref_sMx1.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx12.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx16.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx2.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx4.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx6.cpp
-    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx8.cpp
     CPU/blis/inc/blis.h
     )
 
@@ -89,10 +79,30 @@ target_sources(${PROJECT_NAME}
     ${BLIS_SOURCES}
 )
 
+set(BLIS_SOURCES_WITH_BP_REG
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx1.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx2.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx12.c
+    CPU/blis/sup/bli_gemmsup_rd_haswell_asm_s6x16n.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx16.c
+    CPU/blis/sup/bli_gemmsup_rd_haswell_asm_s6x16m.c
+    CPU/blis/sup/bli_gemmsup_rv_haswell_asm_s6x16m.c
+    CPU/blis/sup/bli_gemmsup_rv_haswell_asm_s6x16n.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx4.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rd_haswell_asm_sMx8.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx4.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx2.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx8.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx6.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx12.c
+    CPU/blis/sup/s6x16/bli_gemmsup_rv_haswell_asm_sMx16.c
+)
 
 add_library(NeoML::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-set_source_files_properties(${BLIS_SOURCES} PROPERTIES COMPILE_FLAGS -fno-operator-names)
+# NOTE: The -fomit-frame-pointer option is needed for some kernels because
+# they make explicit use of the rbp register.
+set_source_files_properties(${BLIS_SOURCES_WITH_BP_REG} PROPERTIES COMPILE_FLAGS -fomit-frame-pointer)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 
@@ -402,12 +412,16 @@ if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_compile_options(${PROJECT_NAME} PRIVATE /arch:SSE2)
 elseif(((LINUX OR DARWIN) AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86.*") OR (ANDROID AND ANDROID_ABI MATCHES "^x86.*") OR (IOS_ARCH MATCHES "^x86.*"))
     target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2 -mfma>)
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2 -mfma>)
 endif()
 
 # Arm neon
 if(ANDROID AND ANDROID_ABI STREQUAL "armeabi-v7a")
     target_compile_options(${PROJECT_NAME} PRIVATE -mfpu=neon)
 endif()
+
+target_link_directories(${PROJECT_NAME} PRIVATE "/home/ykatkov/Build/NeoML/SGEMM/blis/_OUTPUT_/haswelld/lib")
+target_link_libraries(${PROJECT_NAME} PRIVATE libblis.so)
 
 # MKL
 if(NOT ANDROID AND NOT IOS AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86.*)|(amd64)|(AMD64)")

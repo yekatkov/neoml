@@ -55,6 +55,7 @@ template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBa
 using CMicroKernelDefault = CMicroKernelBase<1, 1>;
 template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBase<Transpose, Len>;
 
+extern "C"
 void neo_sgemm_haswell_asm_6x16
      (
        int64_t         k0,
@@ -145,6 +146,9 @@ struct CMicroKernel_6x16 : public CMicroKernelBase<6, 16> {
 };
 #endif
 
+void sgemm_sup( bool ATransposed, bool BTransposed, const float* aPtr, size_t rs_a,
+ const float* bPtr, size_t rs_b, float* cPtr, size_t rs_c, size_t m, size_t n, size_t k );
+
 template<bool ATransposed, bool BTransposed, class MemoryHandler, class Engine, class CCPUInfo>
 inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 	const float* aPtr, size_t aRowSize,
@@ -152,8 +156,11 @@ inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 	float* cPtr, size_t cRowSize,
 	size_t m, size_t n, size_t k)
 {
-//	if( m % 6 == 0 && n % 16 == 0 ) {
-//		printf("6x16\n");
+	if( m <= 200 || n <= 200 || k <= 200 ) {
+		sgemm_sup( ATransposed, BTransposed, aPtr, aRowSize,
+		 bPtr, bRowSize, cPtr, cRowSize, m, n, k );
+	}else if( m % 6 == 0 && n % 16 == 0 ) {
+		printf("6x16\n");
 		CMatrixMultiplier<CMicroKernel_6x16, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
 		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
 //	} else if( m % 4 == 0 && n % 24 == 0 ) {
@@ -163,5 +170,5 @@ inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 //	} else {
 //		CMatrixMultiplier<CMicroKernelDefault, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
 //		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );
-//	}
+	}
 }

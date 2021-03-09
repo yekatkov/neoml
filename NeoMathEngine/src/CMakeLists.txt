@@ -421,7 +421,7 @@ if(ANDROID AND ANDROID_ABI STREQUAL "armeabi-v7a")
 endif()
 
 target_link_directories(${PROJECT_NAME} PRIVATE "/home/ykatkov/Build/NeoML/SGEMM/blis/_OUTPUT_/haswelld/lib")
-target_link_libraries(${PROJECT_NAME} PRIVATE libblis.so)
+target_link_libraries(${PROJECT_NAME} PRIVATE libblis.a)
 
 # MKL
 if(NOT ANDROID AND NOT IOS AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86.*)|(amd64)|(AMD64)")

@@ -35,6 +35,18 @@
 
 #include "blis.h"
 
+void neo_sgemm_haswell_asm_6x16
+     (
+       dim_t               k0,
+       float*     restrict alpha,
+       float*     restrict a,
+       float*     restrict b,
+       float*     restrict beta,
+       float*     restrict c, inc_t rs_c0, inc_t cs_c0,
+       void* restrict data,
+       void*    restrict cntx
+     );
+
 //GEMMSUP_KER_PROT( double,   d, gemmsup_r_haswell_ref )
 
 void bli_cntx_init_haswell( cntx_t* cntx )
@@ -54,7 +66,7 @@ void bli_cntx_init_haswell( cntx_t* cntx )
 	  8,
 	  // gemm
 #if 1
-	  BLIS_GEMM_UKR,       BLIS_FLOAT,    bli_sgemm_haswell_asm_6x16,       TRUE,
+	  BLIS_GEMM_UKR,       BLIS_FLOAT,    neo_sgemm_haswell_asm_6x16,       TRUE,
 	  BLIS_GEMM_UKR,       BLIS_DOUBLE,   bli_dgemm_haswell_asm_6x8,        TRUE,
 	  BLIS_GEMM_UKR,       BLIS_SCOMPLEX, bli_cgemm_haswell_asm_3x8,        TRUE,
 	  BLIS_GEMM_UKR,       BLIS_DCOMPLEX, bli_zgemm_haswell_asm_3x4,        TRUE,

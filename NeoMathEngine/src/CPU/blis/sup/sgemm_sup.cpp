@@ -20,7 +20,9 @@ static void bli_sgemmsup_ref_var2m
 )
 {
 	/* If m or n is zero, return immediately. */
-	assert( bli_zero_dim2( m, n ) );
+	if( bli_zero_dim2( m, n ) ) {
+		return;
+	}
 
 	/* If k < 1 or alpha is zero, scale by beta and return. */
 	if ( k < 1 || bli_seq0( *alpha ) )
@@ -229,8 +231,6 @@ static void bli_gemmsup_ref_var2m
        cntx_t* cntx
      )
 {
-    const num_t    dt        = bli_obj_dt( c );
-
 	const conj_t   conja     = bli_obj_conj_status( a );
 	const conj_t   conjb     = bli_obj_conj_status( b );
 
@@ -321,6 +321,342 @@ static void bli_gemmsup_ref_var2m
 	}
 }
 
+static void bli_sgemmsup_ref_var1n
+     (
+       conj_t           conja,
+       conj_t           conjb,
+       dim_t            m,
+       dim_t            n,
+       dim_t            k,
+       float*  restrict alpha,
+       float*  restrict a, inc_t rs_a, inc_t cs_a,
+       float*  restrict b, inc_t rs_b, inc_t cs_b,
+       float*  restrict beta,
+       float*  restrict c, inc_t rs_c, inc_t cs_c,
+       stor3_t          stor_id,
+       cntx_t* restrict cntx
+     )
+{
+	/* If m or n is zero, return immediately. */
+	if( bli_zero_dim2( m, n ) ) {
+		return;
+	}
+
+	/* If k < 1 or alpha is zero, scale by beta and return. */
+	if ( k < 1 || bli_seq0( *alpha ) )
+	{
+		bli_sscalm
+		(
+		  BLIS_NO_CONJUGATE,
+		  0,
+		  BLIS_NONUNIT_DIAG,
+		  BLIS_DENSE,
+		  m, n,
+		  beta,
+		  c, rs_c, cs_c
+		);
+		return;
+	}
+
+	/* This transposition of the stor3_t id value is inherent to variant 1.
+	   The reason: we assume that variant 2 is the "main" variant. The
+	   consequence of this is that we assume that the millikernels that
+	   iterate over m are registered to the "primary" kernel group associated
+	   with the kernel IO preference; similarly, mkernels that iterate over
+	   n are assumed to be registered to the "non-primary" group associated
+	   with the ("non-primary") anti-preference. Note that this pattern holds
+	   regardless of whether the mkernel set has a row or column preference.)
+	   See bli_l3_sup_int.c for a higher-level view of how this choice is made. */
+	stor_id = bli_stor3_trans( stor_id );
+
+	/* Query the context for various blocksizes. */
+	const dim_t NR  = bli_cntx_get_l3_sup_blksz_def_dt( dt, BLIS_NR, cntx );
+	const dim_t MR  = bli_cntx_get_l3_sup_blksz_def_dt( dt, BLIS_MR, cntx );
+	const dim_t NC0 = bli_cntx_get_l3_sup_blksz_def_dt( dt, BLIS_NC, cntx );
+	const dim_t MC0 = bli_cntx_get_l3_sup_blksz_def_dt( dt, BLIS_MC, cntx );
+	const dim_t KC0 = bli_cntx_get_l3_sup_blksz_def_dt( dt, BLIS_KC, cntx );
+
+	dim_t KC;
+
+	if      ( FALSE                  ) KC = KC0;
+	else if ( stor_id == BLIS_RRC ||
+			  stor_id == BLIS_CRC    ) KC = KC0;
+	else if ( m <=   MR && n <=   NR ) KC = KC0;
+	else if ( m <= 2*MR && n <= 2*NR ) KC = KC0 / 2;
+	else if ( m <= 3*MR && n <= 3*NR ) KC = (( KC0 / 3 ) / 4 ) * 4;
+	else if ( m <= 4*MR && n <= 4*NR ) KC = KC0 / 4;
+	else                               KC = (( KC0 / 5 ) / 4 ) * 4;
+
+
+	/* Nudge NC up to a multiple of MR and MC up to a multiple of NR.
+	   NOTE: This is unique to variant 1 (ie: not performed in variant 2)
+	   because MC % MR == 0 and NC % NR == 0 is already enforced at runtime. */
+	const dim_t NC  = bli_align_dim_to_mult( NC0, MR );
+	const dim_t MC  = bli_align_dim_to_mult( MC0, NR );
+
+	/* Query the maximum blocksize for MR, which implies a maximum blocksize
+	   extension for the final iteration. */
+	const dim_t MRM = bli_cntx_get_l3_sup_blksz_max_dt( dt, BLIS_MR, cntx );
+	const dim_t MRE = MRM - MR;
+
+	/* Compute partitioning step values for each matrix of each loop. */
+	const inc_t jcstep_c = rs_c;
+	const inc_t jcstep_a = rs_a;
+
+	const inc_t pcstep_a = cs_a;
+	const inc_t pcstep_b = rs_b;
+
+	const inc_t icstep_c = cs_c;
+	const inc_t icstep_b = cs_b;
+
+	const inc_t jrstep_c = rs_c * MR;
+
+	/* Query the context for the sup microkernel address and cast it to its
+	   function pointer type. */
+	sgemmsup_ker_ft gemmsup_ker = reinterpret_cast<sgemmsup_ker_ft>( bli_cntx_get_l3_sup_ker_dt( dt, stor_id, cntx ) );
+
+	float* restrict a_00       = a;
+	float* restrict b_00       = b;
+	float* restrict c_00       = c;
+	float* restrict alpha_cast = alpha;
+	float* restrict beta_cast  = beta;
+
+	/* Make local copies of beta and one scalars to prevent any unnecessary
+	   sharing of cache lines between the cores' caches. */
+	float           beta_local = *beta_cast;
+	float           one_local  = 1.;
+
+	auxinfo_t       aux;
+
+	/* Compute the JC loop thread range for the current thread. */
+	dim_t jc_start = 0, jc_end = m;
+	const dim_t m_local = jc_end - jc_start;
+
+	/* Compute number of primary and leftover components of the JC loop. */
+	/*const dim_t jc_iter = ( m_local + NC - 1 ) / NC;*/
+	const dim_t jc_left =   m_local % NC;
+
+	/* Loop over the m dimension (NC rows/columns at a time). */
+	/*for ( dim_t jj = 0; jj < jc_iter; jj += 1 )*/
+	for ( dim_t jj = jc_start; jj < jc_end; jj += NC )
+	{
+		/* Calculate the thread's current JC block dimension. */
+		const dim_t nc_cur = ( NC <= jc_end - jj ? NC : jc_left );
+
+		float* restrict a_jc = a_00 + jj * jcstep_a;
+		float* restrict c_jc = c_00 + jj * jcstep_c;
+
+		/* Compute the PC loop thread range for the current thread. */
+		const dim_t pc_start = 0, pc_end = k;
+		const dim_t k_local = k;
+
+		/* Compute number of primary and leftover components of the PC loop. */
+		/*const dim_t pc_iter = ( k_local + KC - 1 ) / KC;*/
+		const dim_t pc_left =   k_local % KC;
+
+		/* Loop over the k dimension (KC rows/columns at a time). */
+		/*for ( dim_t pp = 0; pp < pc_iter; pp += 1 )*/
+		for ( dim_t pp = pc_start; pp < pc_end; pp += KC )
+		{
+			/* Calculate the thread's current PC block dimension. */
+			const dim_t kc_cur = ( KC <= pc_end - pp ? KC : pc_left );
+
+			float* restrict b_pc = b_00 + pp * pcstep_b;
+
+			/* Only apply beta to the first iteration of the pc loop. */
+			float* restrict beta_use = ( pp == 0 ? &beta_local : &one_local );
+
+			float* a_use = a;
+			inc_t  rs_a_use = rs_a, cs_a_use = cs_a, ps_a_use = MR * rs_a;
+
+			/* Alias a_use so that it's clear this is our current block of
+			   matrix A. */
+			float* restrict a_pc_use = a_use;
+
+			/* Compute the IC loop thread range for the current thread. */
+			dim_t ic_start = 0, ic_end = n;
+			const dim_t n_local = ic_end - ic_start;
+
+			/* Compute number of primary and leftover components of the IC loop. */
+			/*const dim_t ic_iter = ( n_local + MC - 1 ) / MC;*/
+			const dim_t ic_left =   n_local % MC;
+
+			/* Loop over the n dimension (MC rows at a time). */
+			/*for ( dim_t ii = 0; ii < ic_iter; ii += 1 )*/
+			for ( dim_t ii = ic_start; ii < ic_end; ii += MC )
+			{
+				/* Calculate the thread's current IC block dimension. */
+				const dim_t mc_cur = ( MC <= ic_end - ii ? MC : ic_left );
+
+				float* restrict c_ic = c_jc + ii * icstep_c;
+
+				float* b_use = b;
+				inc_t  rs_b_use = rs_b, cs_b_use = cs_b, ps_b_use = NR * cs_b;
+
+				/* Alias b_use so that it's clear this is our current block of
+				   matrix B. */
+				float* restrict b_ic_use = b_use;
+
+				/* Embed the panel stride of B within the auxinfo_t object. The
+				   millikernel will query and use this to iterate through
+				   micropanels of B. */
+				bli_auxinfo_set_ps_b( ps_b_use, &aux );
+
+
+				/* Compute number of primary and leftover components of the JR loop. */
+				dim_t jr_iter = ( nc_cur + MR - 1 ) / MR;
+				dim_t jr_left =   nc_cur % MR;
+
+				/* An optimization: allow the last jr iteration to contain up to MRE
+				   rows of C and A. (If MRE > MR, the mkernel has agreed to handle
+				   these cases.) Note that this prevents us from declaring jr_iter and
+				   jr_left as const. NOTE: We forgo this optimization when packing A
+				   since packing an extended edge case is not yet supported. */
+				if ( MRE != 0 && 1 < jr_iter && jr_left != 0 && jr_left <= MRE )
+				{
+					jr_iter--; jr_left += MR;
+				}
+
+				/* Compute the JR loop thread range for the current thread. */
+				dim_t jr_start = 0, jr_end = jr_iter;
+
+				/* Loop over the m dimension (NR columns at a time). */
+				/*for ( dim_t j = 0; j < jr_iter; j += 1 )*/
+				for ( dim_t j = jr_start; j < jr_end; j += 1 )
+				{
+					const dim_t nr_cur = ( bli_is_not_edge_f( j, jr_iter, jr_left ) ? MR : jr_left );
+
+					float* restrict a_jr = a_pc_use + j * ps_a_use;
+					float* restrict c_jr = c_ic     + j * jrstep_c;
+
+					/* Loop over the n dimension (MR rows at a time). */
+					{
+						/* Invoke the gemmsup millikernel. */
+						gemmsup_ker
+						(
+						  conja,
+						  conjb,
+						  nr_cur, /* Notice: nr_cur <= MR. */
+						  mc_cur, /* Recall: mc_cur partitions the n dimension! */
+						  kc_cur,
+						  alpha_cast,
+						  a_jr,     rs_a_use, cs_a_use,
+						  b_ic_use, rs_b_use, cs_b_use,
+						  beta_use,
+						  c_jr,     rs_c,     cs_c,
+						  &aux,
+						  cntx
+						);
+					}
+				}
+			}
+		}
+	}
+}
+
+static void bli_gemmsup_ref_var1n
+     (
+       trans_t trans,
+       obj_t*  alpha,
+       obj_t*  a,
+       obj_t*  b,
+       obj_t*  beta,
+       obj_t*  c,
+       stor3_t eff_id,
+       cntx_t* cntx
+     )
+{
+	const conj_t   conja     = bli_obj_conj_status( a );
+	const conj_t   conjb     = bli_obj_conj_status( b );
+
+	const dim_t    m         = bli_obj_length( c );
+	const dim_t    n         = bli_obj_width( c );
+		  dim_t    k;
+
+	float* restrict buf_a = static_cast<float*>( bli_obj_buffer_at_off( a ) );
+		  inc_t    rs_a;
+		  inc_t    cs_a;
+
+	float* restrict buf_b = static_cast<float*>( bli_obj_buffer_at_off( b ) );
+		  inc_t    rs_b;
+		  inc_t    cs_b;
+
+	if ( bli_obj_has_notrans( a ) )
+	{
+		k     = bli_obj_width( a );
+
+		rs_a  = bli_obj_row_stride( a );
+		cs_a  = bli_obj_col_stride( a );
+	}
+	else // if ( bli_obj_has_trans( a ) )
+	{
+		// Assign the variables with an implicit transposition.
+		k     = bli_obj_length( a );
+
+		rs_a  = bli_obj_col_stride( a );
+		cs_a  = bli_obj_row_stride( a );
+	}
+
+	if ( bli_obj_has_notrans( b ) )
+	{
+		rs_b  = bli_obj_row_stride( b );
+		cs_b  = bli_obj_col_stride( b );
+	}
+	else // if ( bli_obj_has_trans( b ) )
+	{
+		// Assign the variables with an implicit transposition.
+		rs_b  = bli_obj_col_stride( b );
+		cs_b  = bli_obj_row_stride( b );
+	}
+
+	float* restrict buf_c     = static_cast<float*>( bli_obj_buffer_at_off( c ) );
+	const inc_t    rs_c      = bli_obj_row_stride( c );
+	const inc_t    cs_c      = bli_obj_col_stride( c );
+
+	float* restrict buf_alpha = static_cast<float*>( bli_obj_buffer_for_1x1( dt, alpha ) );
+	float* restrict buf_beta  = static_cast<float*>( bli_obj_buffer_for_1x1( dt, beta ) );
+
+	if ( bli_is_notrans( trans ) )
+	{
+		// Invoke the function.
+		bli_sgemmsup_ref_var1n
+		(
+		  conja,
+		  conjb,
+		  m,
+		  n,
+		  k,
+		  buf_alpha,
+		  buf_a, rs_a, cs_a,
+		  buf_b, rs_b, cs_b,
+		  buf_beta,
+		  buf_c, rs_c, cs_c,
+		  eff_id,
+		  cntx
+		);
+	}
+	else
+	{
+		// Invoke the function (transposing the operation).
+		bli_sgemmsup_ref_var1n
+		(
+		  conjb,             // swap the conj values.
+		  conja,
+		  n,                 // swap the m and n dimensions.
+		  m,
+		  k,
+		  buf_alpha,
+		  buf_b, cs_b, rs_b, // swap the positions of A and B.
+		  buf_a, cs_a, rs_a, // swap the strides of A and B.
+		  buf_beta,
+		  buf_c, cs_c, rs_c, // swap the strides of C.
+		  bli_stor3_trans( eff_id ), // transpose the stor3_t id.
+		  cntx
+		);
+	}
+}
+
+
 static void sgemm_sup_process(
         obj_t*  alpha,
         obj_t*  a,
@@ -387,10 +723,9 @@ static void sgemm_sup_process(
 			printf( "bli_l3_sup_int(): var1n primary\n" );
 			#endif
 			// panel-block macrokernel; m -> nc*,mr; n -> mc*,nr: var1()
-///			FIXME:
-//			bli_gemmsup_ref_var1n( BLIS_NO_TRANSPOSE,
-//			                       alpha, a, b, beta, c,
-//			                       stor_id, cntx );
+			bli_gemmsup_ref_var1n( BLIS_NO_TRANSPOSE,
+								   alpha, a, b, beta, c,
+								   stor_id, cntx );
 			// *requires nudging of nc up to be a multiple of mr.
 		}
 	}
@@ -428,10 +763,9 @@ static void sgemm_sup_process(
 			printf( "bli_l3_sup_int(): var1n non-primary\n" );
 			#endif
 			// block-panel macrokernel; m -> mc*,nr; n -> nc*,mr: var1() + trans
-///			FIXME:
-//			bli_gemmsup_ref_var1n( BLIS_TRANSPOSE,
-//			                       alpha, a, b, beta, c,
-//			                       stor_id, cntx, rntm, thread );
+			bli_gemmsup_ref_var1n( BLIS_TRANSPOSE,
+								   alpha, a, b, beta, c,
+								   stor_id, cntx );
 			// *requires nudging of mc up to be a multiple of nr.
 		}
 	}

@@ -457,7 +457,9 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 	for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
 		const float e = max(abs(*f2 / 1e3), 5e-3 );
 		const float sub = *f1 - *f2;
-		ASSERT_EXPR( sub > -e && sub < e );
+		if( !( sub > -e && sub < e ) ) {
+			ASSERT_EXPR( false);
+		}
 		f1++;
 		f2++;
 	}

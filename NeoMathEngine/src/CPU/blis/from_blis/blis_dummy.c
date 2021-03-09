@@ -845,19 +845,19 @@
 //	bli_free_intl( threshids );
 //}
 
-//void bli_damaxv_zen_int(){ bli_abort(); }
-//void bli_daxpyf_zen_int_8(){ bli_abort(); }
-//void bli_daxpyv_zen_int10(){ bli_abort(); }
-//void bli_ddotv_zen_int(){ bli_abort(); }
-//void bli_ddotxf_zen_int_8(){ bli_abort(); }
-//void bli_ddotxv_zen_int(){ bli_abort(); }
-//void bli_dgemmsup_rd_haswell_asm_6x8m(){ bli_abort(); }
-//void bli_dgemmsup_rd_haswell_asm_6x8n(){ bli_abort(); }
-//void bli_dgemmsup_rv_haswell_asm_6x8m(){ bli_abort(); }
-//void bli_dgemmsup_rv_haswell_asm_6x8n(){ bli_abort(); }
-//void bli_dgemmtrsm_l_haswell_asm_6x8(){ bli_abort(); }
-//void bli_dgemmtrsm_u_haswell_asm_6x8(){ bli_abort(); }
-//void bli_dscalv_zen_int10(){ bli_abort(); }
+void bli_damaxv_zen_int(){ bli_abort(); }
+void bli_daxpyf_zen_int_8(){ bli_abort(); }
+void bli_daxpyv_zen_int10(){ bli_abort(); }
+void bli_ddotv_zen_int(){ bli_abort(); }
+void bli_ddotxf_zen_int_8(){ bli_abort(); }
+void bli_ddotxv_zen_int(){ bli_abort(); }
+void bli_dgemmsup_rd_haswell_asm_6x8m(){ bli_abort(); }
+void bli_dgemmsup_rd_haswell_asm_6x8n(){ bli_abort(); }
+void bli_dgemmsup_rv_haswell_asm_6x8m(){ bli_abort(); }
+void bli_dgemmsup_rv_haswell_asm_6x8n(){ bli_abort(); }
+void bli_dgemmtrsm_l_haswell_asm_6x8(){ bli_abort(); }
+void bli_dgemmtrsm_u_haswell_asm_6x8(){ bli_abort(); }
+void bli_dscalv_zen_int10(){ bli_abort(); }
 
 //bool bli_obj_imag_is_zero( obj_t* a ){ bli_abort(); return false; }
 //void bli_obj_scalar_detach(){ bli_abort(); }
@@ -868,18 +868,18 @@
 
 //int bli_pthread_mutex_lock( bli_pthread_mutex_t* mutex){ bli_abort(); }
 //int bli_pthread_mutex_unlock( bli_pthread_mutex_t* mutex){ bli_abort(); }
-//void bli_samaxv_zen_int(){ bli_abort(); }
-//void bli_saxpyf_zen_int_8(){ bli_abort(); }
-//void bli_saxpyv_zen_int10(){ bli_abort(); }
-//void bli_sdotv_zen_int(){ bli_abort(); }
-//void bli_sdotxf_zen_int_8(){ bli_abort(); }
-//void bli_sdotxv_zen_int(){ bli_abort(); }
+void bli_samaxv_zen_int(){ bli_abort(); }
+void bli_saxpyf_zen_int_8(){ bli_abort(); }
+void bli_saxpyv_zen_int10(){ bli_abort(); }
+void bli_sdotv_zen_int(){ bli_abort(); }
+void bli_sdotxf_zen_int_8(){ bli_abort(); }
+void bli_sdotxv_zen_int(){ bli_abort(); }
 //void bli_sgemm_haswell_asm_6x16(){ bli_abort(); }
-//void bli_sgemmtrsm_l_haswell_asm_6x16(){ bli_abort(); }
-//void bli_sgemmtrsm_u_haswell_asm_6x16(){ bli_abort(); }
+void bli_sgemmtrsm_l_haswell_asm_6x16(){ bli_abort(); }
+void bli_sgemmtrsm_u_haswell_asm_6x16(){ bli_abort(); }
 //void bli_sgemv_ex(){ bli_abort(); }
 //void bli_sscalm(){ bli_abort(); }
-//void bli_sscalv_zen_int10(){ bli_abort(); }
+void bli_sscalv_zen_int10(){ bli_abort(); }
 //void bli_thrcomm_barrier(){ bli_abort(); }
 //void* bli_thrcomm_bcast( dim_t inside_id, void* to_send, thrcomm_t* comm ){ bli_abort(); }
 

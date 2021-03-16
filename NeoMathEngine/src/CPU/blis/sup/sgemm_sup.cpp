@@ -2,8 +2,19 @@
 #include <blis.h>
 
 constexpr num_t dt = BLIS_FLOAT;
+class SupCntxHolder {
+public:
+    SupCntxHolder() {
+        bli_cntx_init_haswell( &cntx );
+    }
+    cntx_t* GetCntx() { return &cntx; }
+private:
+    cntx_t cntx;
+};
 
-static void bli_sgemmsup_ref_var2m
+SupCntxHolder CntxHolder;
+
+static inline void bli_sgemmsup_ref_var2m
 (
   conj_t           conja,
   conj_t           conjb,
@@ -19,6 +30,32 @@ static void bli_sgemmsup_ref_var2m
   cntx_t* restrict cntx
 )
 {
+//	printf("[var2m] :\n  {m: %ld}\n  {n; %ld}\n  {k: %ld}\n  {rs_a: %ld}\n  {cs_a: %ld}\n  {rs_b: %ld}\n  {cs_b: %ld}\n  {rs_c: %ld}\n  {cs_c: %ld}\n  {stor_id: %d}\n",
+//		   m, n, k, rs_a, cs_a, rs_b, cs_b, rs_c, cs_c, stor_id);
+//	printf("===A===\n");
+//	printf("{\n");
+//	for( int i = 0; i < m; i++) {
+//		float* at = (float*)a + i * cs_a;
+//		for(int j = 0; j < k; j++) {
+//			printf("% 2.2f, ", *at);
+//			at += rs_a;
+//		}
+//		printf("\n");
+//	};
+//	printf("}\n");
+
+//	printf("===B===\n");
+//	printf("{\n");
+//	for( int i = 0; i < k; i++) {
+//		float* bt = (float*)b + i * cs_b;
+//		for(int j = 0; j < n; j++) {
+//			printf("% 2.2f, ", *bt);
+//			bt += rs_b;
+//		}
+//		printf("\n");
+//	};
+//	printf("}\n");
+
 	/* If m or n is zero, return immediately. */
 	if( bli_zero_dim2( m, n ) ) {
 		return;
@@ -72,6 +109,7 @@ static void bli_sgemmsup_ref_var2m
 	const inc_t pcstep_b = rs_b;
 
 	const inc_t icstep_c = rs_c;
+	const inc_t icstep_a = rs_a;
 
 	const inc_t jrstep_c = cs_c * NR;
 
@@ -132,7 +170,7 @@ static void bli_sgemmsup_ref_var2m
 			float* restrict beta_use = ( pp == 0 ? &beta_local : &one_local );
 
 			float* b_use = b_pc;
-			inc_t  rs_b_use = rs_b, cs_b_use = cs_b, ps_b_use = NC * cs_b;
+			inc_t  rs_b_use = rs_b, cs_b_use = cs_b, ps_b_use = NR * cs_b;
 
 			/* Alias b_use so that it's clear this is our current block of
 			   matrix B. */
@@ -153,10 +191,11 @@ static void bli_sgemmsup_ref_var2m
 				/* Calculate the thread's current IC block dimension. */
 				const dim_t mc_cur = ( MC <= ic_end - ii ? MC : ic_left );
 
+				float* restrict a_ic = a_pc + ii * icstep_a;
 				float* restrict c_ic = c_jc + ii * icstep_c;
 
-				float* a_use = a_pc;
-				inc_t  rs_a_use = rs_a, cs_a_use = cs_a, ps_a_use = KC;
+				float* a_use = a_ic;
+				inc_t  rs_a_use = rs_a, cs_a_use = cs_a, ps_a_use = MR * rs_a;
 
 				/* Alias a_use so that it's clear this is our current block of
 				   matrix A. */
@@ -217,9 +256,20 @@ static void bli_sgemmsup_ref_var2m
 			}
 		}
 	}
+//	printf("===C===\n");
+//	printf("{\n");
+//	for( int i = 0; i < m; i++) {
+//		float* ct = (float*)c + i * rs_c;
+//		for(int j = 0; j < n; j++) {
+//			printf("% 2.2f, ", *ct);
+//			ct += cs_c;
+//		}
+//		printf("\n");
+//	};
+//	printf("}\n");
 }
 
-static void bli_gemmsup_ref_var2m
+static inline void bli_gemmsup_ref_var2m
      (
        trans_t trans,
        obj_t*  alpha,
@@ -321,7 +371,7 @@ static void bli_gemmsup_ref_var2m
 	}
 }
 
-static void bli_sgemmsup_ref_var1n
+static inline void bli_sgemmsup_ref_var1n
      (
        conj_t           conja,
        conj_t           conjb,
@@ -337,6 +387,32 @@ static void bli_sgemmsup_ref_var1n
        cntx_t* restrict cntx
      )
 {
+//	printf("[var1n] :\n  {m: %ld}\n  {n; %ld}\n  {k: %ld}\n  {rs_a: %ld}\n  {cs_a: %ld}\n  {rs_b: %ld}\n  {cs_b: %ld}\n  {rs_c: %ld}\n  {cs_c: %ld}\n  {stor_id: %d}\n",
+//		   m, n, k, rs_a, cs_a, rs_b, cs_b, rs_c, cs_c, stor_id);
+//	printf("===A===\n");
+//	printf("{\n");
+//	for( int i = 0; i < m; i++) {
+//		float* at = (float*)a + i * rs_a;
+//		for(int j = 0; j < k; j++) {
+//			printf("% 2.2f, ", *at);
+//			at += cs_a;
+//		}
+//		printf("\n");
+//	};
+//	printf("}\n");
+
+//	printf("===B===\n");
+//	printf("{\n");
+//	for( int i = 0; i < k; i++) {
+//		float* bt = (float*)b + i * rs_b;
+//		for(int j = 0; j < n; j++) {
+//			printf("% 2.2f, ", *bt);
+//			bt += cs_b;
+//		}
+//		printf("\n");
+//	};
+//	printf("}\n");
+
 	/* If m or n is zero, return immediately. */
 	if( bli_zero_dim2( m, n ) ) {
 		return;
@@ -461,12 +537,13 @@ static void bli_sgemmsup_ref_var1n
 			/* Calculate the thread's current PC block dimension. */
 			const dim_t kc_cur = ( KC <= pc_end - pp ? KC : pc_left );
 
+			float* restrict a_pc = a_jc + pp * pcstep_a;
 			float* restrict b_pc = b_00 + pp * pcstep_b;
 
 			/* Only apply beta to the first iteration of the pc loop. */
 			float* restrict beta_use = ( pp == 0 ? &beta_local : &one_local );
 
-			float* a_use = a;
+			float* a_use = a_pc;
 			inc_t  rs_a_use = rs_a, cs_a_use = cs_a, ps_a_use = MR * rs_a;
 
 			/* Alias a_use so that it's clear this is our current block of
@@ -488,9 +565,10 @@ static void bli_sgemmsup_ref_var1n
 				/* Calculate the thread's current IC block dimension. */
 				const dim_t mc_cur = ( MC <= ic_end - ii ? MC : ic_left );
 
+				float* restrict b_ic = b_pc + ii * icstep_b;
 				float* restrict c_ic = c_jc + ii * icstep_c;
 
-				float* b_use = b;
+				float* b_use = b_ic;
 				inc_t  rs_b_use = rs_b, cs_b_use = cs_b, ps_b_use = NR * cs_b;
 
 				/* Alias b_use so that it's clear this is our current block of
@@ -552,9 +630,20 @@ static void bli_sgemmsup_ref_var1n
 			}
 		}
 	}
+//	printf("===C===\n");
+//	printf("{\n");
+//	for( int i = 0; i < m; i++) {
+//		float* ct = (float*)c + i * rs_c;
+//		for(int j = 0; j < n; j++) {
+//			printf("% 2.2f, ", *ct);
+//			ct += cs_c;
+//		}
+//		printf("\n");
+//	};
+//	printf("}\n");
 }
 
-static void bli_gemmsup_ref_var1n
+static inline void bli_gemmsup_ref_var1n
      (
        trans_t trans,
        obj_t*  alpha,
@@ -657,7 +746,7 @@ static void bli_gemmsup_ref_var1n
 }
 
 
-static void sgemm_sup_process(
+static inline void sgemm_sup_process(
         obj_t*  alpha,
         obj_t*  a,
         obj_t*  b,
@@ -771,15 +860,19 @@ static void sgemm_sup_process(
 	}
 }
 
-void sgemm_sup( bool ATransposed, bool BTransposed, const float* aPtr, size_t rs_a,
- const float* bPtr, size_t rs_b, float* cPtr, size_t rs_c, size_t m, size_t n, size_t k )
+__attribute__((visibility("default"))) void sgemm_sup( bool ATransposed, bool BTransposed, const float* aPtr, size_t lda,
+ const float* bPtr, size_t ldb, float* cPtr, size_t ldc, size_t m, size_t n, size_t k )
 {
 	const trans_t transa = ATransposed ? BLIS_TRANSPOSE : BLIS_NO_TRANSPOSE;
 	const trans_t transb = BTransposed ? BLIS_TRANSPOSE : BLIS_NO_TRANSPOSE;
 	float alpha = 1.0;
 	float beta = 0.0;
+	size_t rs_a = lda;
 	size_t cs_a = 1;
+	size_t rs_b = ldb;
 	size_t cs_b = 1;
+
+	size_t rs_c = ldc;
 	size_t cs_c = 1;
 
 	obj_t       alphao = BLIS_OBJECT_INITIALIZER_1X1;
@@ -792,8 +885,8 @@ void sgemm_sup( bool ATransposed, bool BTransposed, const float* aPtr, size_t rs
 	dim_t       m_b, n_b;
 
 	static_assert ( dt == 0, "In blis cntx is an array, so we should always refer to first item of cntx." );
-	cntx_t cntx;
-	bli_cntx_init_haswell( &cntx );
+
+	cntx_t* cntx = CntxHolder.GetCntx();
 
 	bli_set_dims_with_trans( transa, m, k, &m_a, &n_a );
 	bli_set_dims_with_trans( transb, k, n, &m_b, &n_b );
@@ -805,5 +898,8 @@ void sgemm_sup( bool ATransposed, bool BTransposed, const float* aPtr, size_t rs
 	bli_obj_init_finish( dt, m_b, n_b, const_cast<float*>( bPtr ), rs_b, cs_b, &b );
 	bli_obj_init_finish( dt, m,   n,   cPtr, rs_c, cs_c, &c );
 
-	sgemm_sup_process( &alphao, &a, &b, &betao, &c, &cntx );
+	bli_obj_set_conjtrans( transa, &a );
+	bli_obj_set_conjtrans( transb, &b );
+
+	sgemm_sup_process( &alphao, &a, &b, &betao, &c, cntx );
 }

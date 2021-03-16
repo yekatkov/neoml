@@ -159,7 +159,7 @@ inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 	if( m <= 200 || n <= 200 || k <= 200 ) {
 		sgemm_sup( ATransposed, BTransposed, aPtr, aRowSize,
 		 bPtr, bRowSize, cPtr, cRowSize, m, n, k );
-	}else if( m % 6 == 0 && n % 16 == 0 ) {
+	}else{
 		printf("6x16\n");
 		CMatrixMultiplier<CMicroKernel_6x16, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
 		( engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k );

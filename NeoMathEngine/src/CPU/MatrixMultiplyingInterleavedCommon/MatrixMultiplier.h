@@ -16,7 +16,7 @@ limitations under the License.
 #pragma once
 
 // This code does not use any NeoML structures, 
-// so you can create a mini-project that would not require NeoML dependencies 
+// so you can create a mini-project that would not require NeoML dependencies
 // but will let you test, optimize, and compile performance statistics. 
 // All types are passed as template parameters
 
@@ -271,10 +271,156 @@ struct TailProcessorBottom<Kernel, typename SFINAEFilter<typename Kernel::TailKe
 	}
 };
 
+extern "C"
+void neo_sgemm_haswell_asm_6x16
+     (
+       int64_t         k0,
+       float*      alpha,
+       float*      a,
+       float*      b,
+       float*      beta,
+       float*      c, int64_t rs_c0, int64_t cs_c0,
+       void*       data,
+       void*       cntx
+     );
+
+extern "C"
+void neo_sssxpbys_mxn( const int64_t m, const int64_t n, float*    x, const int64_t rs_x, const int64_t cs_x,
+                                                            float*    beta,
+                                                            float*    y, const int64_t rs_y, const int64_t cs_y );
 // Matrix product. Calculates the block size to fit into caches, 
 // prepares A and B matrix blocks and performs multiplication
 template<class Kernel, template<bool, size_t> class Interleaver, bool ATransposed, bool BTransposed, class MemoryHandler, class Engine>
 struct CMatrixMultiplier {
+
+	template<class CCPUInfo>
+	static void MyMultiply(Engine *engine, const CCPUInfo &cpuInfo, const float* aPtr, size_t aRowSize,
+		const float* bPtr, size_t bRowSize, float* cPtr, size_t cRowSize, size_t m, size_t n, size_t k) {
+		float one = 1.;
+		float zero = 0.;
+		float* alpha = &one;
+		float* beta = &zero; // rewrite after first KC
+		const int NC = 4080;
+		const int KC = 256;
+		const int MC = 168;
+		const int MR = 6;
+		const int NR = 16;
+		size_t cs_a = ATransposed ? aRowSize : 1;
+		size_t rs_a = ATransposed ? 1 : aRowSize;
+		size_t cs_b = ATransposed ? bRowSize : 1;
+		size_t rs_b = ATransposed ? 1 : bRowSize;
+		size_t cs_c = 1;
+		size_t rs_c = cRowSize;
+
+		// Temporary memory
+		MemoryHandler aTmpHandler(engine, MC * KC);
+		MemoryHandler bTmpHandler(engine, KC * NC);
+		MemoryHandler cTmpHandler(engine, MR * NR);
+		float* aTmp = aTmpHandler.get(); // L2
+		float* bTmp = bTmpHandler.get(); // L3 ->L1
+		float* cTmp = cTmpHandler.get(); // L1
+
+		int n_it = n / NC;
+		int n_last = n % NC;
+		if( n_last != 0 ) {
+			n_it++;
+		} else {
+			n_last = NC;
+		}
+
+		int k_it = k / KC;
+		int k_last = k % KC;
+		if( k_last != 0 ) {
+			k_it++;
+		} else {
+			k_last = KC;
+		}
+
+		int m_it = m / MC;
+		int m_last = m % MC;
+		if( m_last != 0 ) {
+			m_it++;
+		} else {
+			m_last = MC;
+		}
+
+		for( int jj = 0; jj < n_it; jj++ ) {
+			int n_cur = jj == ( n_it - 1 ) ? n_last : NC;
+			const float* bj = bPtr + jj * NC * cs_b;
+			float* cj = cPtr + jj * NC * cs_c;
+
+			for( int kk = 0; kk < k_it; kk++ ) {
+				int k_cur = kk == ( k_it - 1 ) ? k_last : KC;
+				const float* bk = bj + kk * KC * rs_b;
+				const float* ak = aPtr + kk * KC * cs_a;
+
+				PreparerB::Prepare( bTmp, bk, rs_b, k_cur, n_cur );
+
+				for( int ii = 0; ii < m_it; ii++ ) {
+					int m_cur = ii == ( m_it - 1 ) ? m_last : MC;
+					const float* ai = ak + ii * MC * rs_a;
+					float* ci = cj + ii * MC * rs_c;
+
+					PreparerA::Prepare( aTmp, ai, rs_a, m_cur, k_cur );
+
+					const float* br = bTmp;
+					float* cr = ci;
+
+					for( int jr = 0; jr < n_cur; jr += NR ) {
+						size_t jr_cur = min( NR, n_cur - jr );
+						const float* ar = aTmp;
+						float* cri = cr;
+
+						for( int ir = 0; ir < m_cur; ir += MR ) {
+							size_t ir_cur = min( MR, m_cur - ir );
+							if( jr_cur == NR && ir_cur == MR ) {
+								// Whole kernel
+								neo_sgemm_haswell_asm_6x16
+								(
+									k_cur,
+									const_cast<float*>( alpha ),
+									const_cast<float*>( ar ),
+									const_cast<float*>( br ),
+									const_cast<float*>( beta ),
+									cri, rs_c, cs_c,
+									nullptr,
+									nullptr
+									);
+							} else {
+								// Partial kernel
+								neo_sgemm_haswell_asm_6x16
+								(
+									k_cur,
+									const_cast<float*>( alpha ),
+									const_cast<float*>( ar ),
+									const_cast<float*>( br ),
+									&zero,
+									cTmp, NR, 1,
+									nullptr,
+									nullptr
+									);
+
+								/// FIXME: Can be speed up via inlining ( as in blis )
+								neo_sssxpbys_mxn( ir_cur, jr_cur,
+												cTmp,  NR, 1,
+												const_cast<float*>( beta ),
+												cri, rs_c, cs_c );
+							}
+							ar += MR * k_cur;
+							cri += MR * rs_c;
+
+						}
+						br += NR * k_cur;
+						cr += NR * cs_c;
+					}
+				}
+				// Now we will update current matrix
+				beta = &one;
+			}
+		}
+
+	}
+
 	template<class CCPUInfo>
 	static void Multiply(Engine *engine, const CCPUInfo &cpuInfo, const float* aPtr, size_t aRowSize,
 		const float* bPtr, size_t bRowSize, float* cPtr, size_t cRowSize, size_t m, size_t n, size_t k)
@@ -370,5 +516,9 @@ private:
 	// Integer division, rounding up
 	static constexpr size_t Ceildiv(size_t a, size_t b) {
 		return (a + b - 1) / b;
+	}
+
+	static constexpr size_t min(size_t a, size_t b) {
+		return a > b ? b : a;
 	}
 };

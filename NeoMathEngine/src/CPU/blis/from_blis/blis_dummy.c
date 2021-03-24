@@ -1,4 +1,4 @@
-//#include <blis.h>
+#include <blis.h>
 
 //void bli_abort()
 //{
@@ -892,3 +892,10 @@
 //  dim_t*     start,
 //  dim_t*     end
 //){ bli_abort(); }
+
+__attribute__((visibility("default")))  void neo_sssxpbys_mxn( const dim_t m, const dim_t n, float*    restrict x, const inc_t rs_x, const inc_t cs_x,
+                                                            float*    restrict beta,
+                                                            float*    restrict y, const inc_t rs_y, const inc_t cs_y )
+{
+    bli_sssxpbys_mxn( m, n, x, rs_x, cs_x, beta, y, rs_y, cs_y );
+}

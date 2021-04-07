@@ -40,6 +40,9 @@ limitations under the License.
 // Find the acceptable values or get them from CPU info
 static constexpr CCPUInfo CpuInfo( 32 * 1024, 256 * 1024, 2 * 1024 * 1024 );
 
+static const bool UseNeoML = getenv("NO_NEOML") != NULL ? false : true;
+static const bool UseMKL = getenv("NO_MKL") != NULL ? false : true;
+
 namespace NeoML {
 
 void CCpuMathEngine::multiplyMatrixByMatrix( const float* first, int firstHeight,
@@ -80,6 +83,9 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrix(const float* first, int fi
 	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
 	float* result, int resultRowSize)
 {
+	if( !UseMKL ) {
+		return;
+	}
 	ASSERT_EXPR(firstWidth <= firstRowSize);
 	ASSERT_EXPR(firstWidth <= secondRowSize);
 
@@ -97,6 +103,9 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrix_custom( const float* first
 	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
 	float* result, int resultRowSize )
 {
+	if( !UseNeoML ) {
+		return;
+	}
 	ASSERT_EXPR( firstWidth <= firstRowSize );
 	ASSERT_EXPR( firstWidth <= secondRowSize );
 
@@ -109,6 +118,9 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd( const float* first,
 	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
 	float* result, int resultRowSize )
 {
+	if( !UseMKL ) {
+		return;
+	}
 #ifdef NEOML_USE_MKL
 	cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, firstHeight, secondHeight, firstWidth,
 		1, first, firstRowSize, second, secondRowSize, 1, result, resultRowSize);
@@ -116,6 +128,17 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd( const float* first,
 	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
 		result, resultRowSize, firstHeight, secondHeight, firstWidth );
 #endif
+}
+
+void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd_custom( const float* first, int firstHeight,
+	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
+	float* result, int resultRowSize )
+{
+	if( !UseNeoML ) {
+		return;
+	}
+	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
+		result, resultRowSize, firstHeight, secondHeight, firstWidth );
 }
 
 // result = first * T(second). The result size is firstHeight * secondHeight:

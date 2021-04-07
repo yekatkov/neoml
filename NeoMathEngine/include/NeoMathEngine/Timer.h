@@ -57,7 +57,7 @@ public:
 	float GetTimeInMs() const
 	{
 		auto currentTime = isStarted ? std::chrono::high_resolution_clock::now() - startTime : timeDelay;
-		return currentTime.count() / 1e6f;
+		return currentTime.count() / 1e3f;
 	}
 
 	static std::string PrintTimers()

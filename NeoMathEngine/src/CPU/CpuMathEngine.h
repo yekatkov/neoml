@@ -502,6 +502,8 @@ private:
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle );
 	void multiplyMatrixByTransposedMatrixAndAdd( const float* first, int firstHeight, int firstWidth, int firstRowSize,
 		const float* second, int secondHeight, int secondRowSize, float* result, int resultRowSize );
+	void multiplyMatrixByTransposedMatrixAndAdd_custom( const float* first, int firstHeight, int firstWidth, int firstRowSize,
+		const float* second, int secondHeight, int secondRowSize, float* result, int resultRowSize );
 
 	template<class T>
 	void blobMergeByDimCommon( int dimNum, const CBlobDesc* from, const CTypedMemoryHandle<T>* fromData, int fromCount,

@@ -892,7 +892,397 @@
 //  dim_t*     start,
 //  dim_t*     end
 //){ bli_abort(); }
+#if 0
+dim_t bli_align_dim_to_mult
+     (
+       dim_t dim,
+       dim_t dim_mult
+     )
+{
+	// We return the dimension unmodified if the multiple is zero
+	// (to avoid division by zero).
+	if ( dim_mult == 0 ) return dim;
 
+	dim = ( ( dim + dim_mult - 1 ) /
+			dim_mult ) *
+			dim_mult;
+
+	return dim;
+}
+
+void bli_cntx_set_l3_nat_ukrs( dim_t n_ukrs, ... )
+{
+	const int UkrsSize = 8;
+
+	l3ukr_t ukr_ids[UkrsSize];
+	num_t   ukr_dts[UkrsSize];
+	void_fp ukr_fps[UkrsSize];
+	bool    ukr_prefs[UkrsSize];
+
+	assert( n_ukrs <= UkrsSize );
+	// This function can be called from the bli_cntx_init_*() function for
+	// a particular architecture if the kernel developer wishes to use
+	// non-default level-3 microkernels. It should be called after
+	// bli_cntx_init_defaults() so that the context begins with default
+	// microkernels across all datatypes.
+
+	/* Example prototypes:
+
+	   void bli_cntx_set_l3_nat_ukrs
+	   (
+		 dim_t   n_ukrs,
+		 l3ukr_t ukr0_id, num_t dt0, void_fp ukr0_fp, bool pref0,
+		 l3ukr_t ukr1_id, num_t dt1, void_fp ukr1_fp, bool pref1,
+		 l3ukr_t ukr2_id, num_t dt2, void_fp ukr2_fp, bool pref2,
+		 ...
+		 cntx_t* cntx
+	   );
+	*/
+
+	va_list   args;
+	dim_t     i;
+
+
+	// -- Begin variable argument section --
+
+	// Initialize variable argument environment.
+	va_start( args, n_ukrs );
+
+	// Process n_ukrs tuples.
+	for ( i = 0; i < n_ukrs; ++i )
+	{
+		// Here, we query the variable argument list for:
+		// - the l3ukr_t of the kernel we're about to process,
+		// - the datatype of the kernel,
+		// - the kernel function pointer, and
+		// - the kernel function storage preference
+		// that we need to store to the context.
+
+		// NOTE: Though bool_t is no longer used, the following comment is
+		// being kept for historical reasons.
+		// The type that we pass into the va_arg() macro for the ukr
+		// preference matters. Using 'bool_t' may cause breakage on 64-bit
+		// systems that define int as 32 bits and long int and pointers as
+		// 64 bits. The problem is that TRUE or FALSE are defined as 1 and
+		// 0, respectively, and when "passed" into the variadic function
+		// they come with no contextual typecast. Thus, default rules of
+		// argument promotion kick in to treat these integer literals as
+		// being of type int. Thus, we need to let va_arg() treat the TRUE
+		// or FALSE value as an int, even if we cast it to and store it
+		// within a bool_t afterwards.
+		const l3ukr_t  ukr_id   = ( l3ukr_t )va_arg( args, l3ukr_t );
+		const num_t    ukr_dt   = ( num_t   )va_arg( args, num_t   );
+			  void_fp  ukr_fp   = ( void_fp )va_arg( args, void_fp );
+		const bool     ukr_pref = ( bool    )va_arg( args, int     );
+
+		// Store the values in our temporary arrays.
+		ukr_ids[ i ]   = ukr_id;
+		ukr_dts[ i ]   = ukr_dt;
+		ukr_fps[ i ]   = ukr_fp;
+		ukr_prefs[ i ] = ukr_pref;
+	}
+
+	// The last argument should be the context pointer.
+	cntx_t* cntx = ( cntx_t* )va_arg( args, cntx_t* );
+
+	// Shutdown variable argument environment and clean up stack.
+	va_end( args );
+
+	// -- End variable argument section --
+
+	// Query the context for the addresses of:
+	// - the l3 virtual ukernel func_t array
+	// - the l3 native ukernel func_t array
+	// - the l3 native ukernel preferences array
+	func_t*  cntx_l3_vir_ukrs       = bli_cntx_l3_vir_ukrs_buf( cntx );
+	func_t*  cntx_l3_nat_ukrs       = bli_cntx_l3_nat_ukrs_buf( cntx );
+	mbool_t* cntx_l3_nat_ukrs_prefs = bli_cntx_l3_nat_ukrs_prefs_buf( cntx );
+
+	// Now that we have the context address, we want to copy the values
+	// from the temporary buffers into the corresponding buffers in the
+	// context.
+
+	// Process each blocksize id tuple provided.
+	for ( i = 0; i < n_ukrs; ++i )
+	{
+		// Read the current ukernel id, ukernel datatype, ukernel function
+		// pointer, and ukernel preference.
+		const l3ukr_t ukr_id   = ukr_ids[ i ];
+		const num_t   ukr_dt   = ukr_dts[ i ];
+			  void_fp ukr_fp   = ukr_fps[ i ];
+		const bool    ukr_pref = ukr_prefs[ i ];
+
+		// Index into the func_t and mbool_t for the current kernel id
+		// being processed.
+		func_t*       vukrs  = &cntx_l3_vir_ukrs[ ukr_id ];
+		func_t*       ukrs   = &cntx_l3_nat_ukrs[ ukr_id ];
+		mbool_t*      prefs  = &cntx_l3_nat_ukrs_prefs[ ukr_id ];
+
+		// Store the ukernel function pointer and preference values into
+		// the context. Notice that we redundantly store the native
+		// ukernel address in both the native and virtual ukernel slots
+		// in the context. This is standard practice when creating a
+		// native context. (Induced method contexts will overwrite the
+		// virtual function pointer with the address of the appropriate
+		// virtual ukernel.)
+		bli_func_set_dt( ukr_fp, ukr_dt, vukrs );
+		bli_func_set_dt( ukr_fp, ukr_dt, ukrs );
+		bli_mbool_set_dt( ukr_pref, ukr_dt, prefs );
+	}
+}
+
+void bli_cntx_init_haswell_ref
+     (
+       cntx_t* cntx
+     )
+{
+	blksz_t  blkszs[ BLIS_NUM_BLKSZS ];
+	blksz_t  thresh[ BLIS_NUM_THRESH ];
+	func_t*  funcs;
+	mbool_t* mbools;
+	dim_t    i;
+	void**   vfuncs;
+
+
+	// -- Clear the context ----------------------------------------------------
+
+	bli_cntx_clear( cntx );
+
+
+	// -- Set blocksizes -------------------------------------------------------
+
+	//                                          s     d     c     z
+	bli_blksz_init_easy( &blkszs[ BLIS_KR ],    1,    1,    1,    1 );
+	bli_blksz_init_easy( &blkszs[ BLIS_MR ],    4,    4,    4,    4 );
+	bli_blksz_init_easy( &blkszs[ BLIS_NR ],   16,    8,    8,    4 );
+	bli_blksz_init_easy( &blkszs[ BLIS_MC ],  256,  128,  128,   64 );
+	bli_blksz_init_easy( &blkszs[ BLIS_KC ],  256,  256,  256,  256 );
+	bli_blksz_init_easy( &blkszs[ BLIS_NC ], 4096, 4096, 4096, 4096 );
+	bli_blksz_init_easy( &blkszs[ BLIS_M2 ], 1000, 1000, 1000, 1000 );
+	bli_blksz_init_easy( &blkszs[ BLIS_N2 ], 1000, 1000, 1000, 1000 );
+	bli_blksz_init_easy( &blkszs[ BLIS_AF ],    8,    8,    8,    8 );
+	bli_blksz_init_easy( &blkszs[ BLIS_DF ],    6,    6,    6,    6 );
+	bli_blksz_init_easy( &blkszs[ BLIS_XF ],    4,    4,    4,    4 );
+
+	// Initialize the context with the default blocksize objects and their
+	// multiples.
+	bli_cntx_set_blkszs
+	(
+	  BLIS_NAT, 11,
+	  BLIS_NC, &blkszs[ BLIS_NC ], BLIS_NR,
+	  BLIS_KC, &blkszs[ BLIS_KC ], BLIS_KR,
+	  BLIS_MC, &blkszs[ BLIS_MC ], BLIS_MR,
+	  BLIS_NR, &blkszs[ BLIS_NR ], BLIS_NR,
+	  BLIS_MR, &blkszs[ BLIS_MR ], BLIS_MR,
+	  BLIS_KR, &blkszs[ BLIS_KR ], BLIS_KR,
+	  BLIS_M2, &blkszs[ BLIS_M2 ], BLIS_M2,
+	  BLIS_N2, &blkszs[ BLIS_N2 ], BLIS_N2,
+	  BLIS_AF, &blkszs[ BLIS_AF ], BLIS_AF,
+	  BLIS_DF, &blkszs[ BLIS_DF ], BLIS_DF,
+	  BLIS_XF, &blkszs[ BLIS_XF ], BLIS_XF,
+	  cntx
+	);
+
+
+	// -- Set level-3 virtual micro-kernels ------------------------------------
+
+	funcs = bli_cntx_l3_vir_ukrs_buf( cntx );
+
+	// NOTE: We set the virtual micro-kernel slots to contain the addresses
+	// of the native micro-kernels. In general, the ukernels in the virtual
+	// ukernel slots are always called, and if the function called happens to
+	// be a virtual micro-kernel, it will then know to find its native
+	// ukernel in the native ukernel slots.
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_sgemm_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_GEMM_UKR ] );
+	// bli_func_set_dt( bli_sgemmtrsm_l_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_GEMMTRSM_L_UKR ] );
+	// bli_func_set_dt( bli_sgemmtrsm_u_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_GEMMTRSM_U_UKR ] );
+	// bli_func_set_dt( bli_strsm_l_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_TRSM_L_UKR ] );
+	// bli_func_set_dt( bli_strsm_u_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_TRSM_U_UKR ] );
+
+
+	// -- Set level-3 native micro-kernels and preferences ---------------------
+
+	funcs  = bli_cntx_l3_nat_ukrs_buf( cntx );
+	mbools = bli_cntx_l3_nat_ukrs_prefs_buf( cntx );
+
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_sgemm_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_GEMM_UKR ] );
+	// bli_func_set_dt( bli_sgemmtrsm_l_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_GEMMTRSM_L_UKR ] );
+	// bli_func_set_dt( bli_sgemmtrsm_u_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_GEMMTRSM_U_UKR ] );
+	// bli_func_set_dt( bli_strsm_l_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_TRSM_L_UKR ] );
+	// bli_func_set_dt( bli_strsm_u_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_TRSM_U_UKR ] );
+
+	//                                                  s      d      c      z
+	bli_mbool_init( &mbools[ BLIS_GEMM_UKR ],        TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_GEMMTRSM_L_UKR ], FALSE, FALSE, FALSE, FALSE );
+	bli_mbool_init( &mbools[ BLIS_GEMMTRSM_U_UKR ], FALSE, FALSE, FALSE, FALSE );
+	bli_mbool_init( &mbools[ BLIS_TRSM_L_UKR ],     FALSE, FALSE, FALSE, FALSE );
+	bli_mbool_init( &mbools[ BLIS_TRSM_U_UKR ],     FALSE, FALSE, FALSE, FALSE );
+
+
+	// -- Set level-3 small/unpacked thresholds --------------------------------
+
+	// NOTE: The default thresholds are set to zero so that the sup framework
+	// does not activate by default. Note that the semantic meaning of the
+	// thresholds is that the sup code path is executed if a dimension is
+	// strictly less than its corresponding threshold. So actually, the
+	// thresholds specify the minimum dimension size that will still dispatch
+	// the non-sup/large code path. This "strictly less than" behavior was
+	// chosen over "less than or equal to" so that threshold values of 0 would
+	// effectively disable sup (even for matrix dimensions of 0).
+	//                                          s     d     c     z
+	bli_blksz_init_easy( &thresh[ BLIS_MT ],    0,    0,    0,    0 );
+	bli_blksz_init_easy( &thresh[ BLIS_NT ],    0,    0,    0,    0 );
+	bli_blksz_init_easy( &thresh[ BLIS_KT ],    0,    0,    0,    0 );
+
+	// Initialize the context with the default thresholds.
+	bli_cntx_set_l3_sup_thresh
+	(
+	  3,
+	  BLIS_MT, &thresh[ BLIS_MT ],
+	  BLIS_NT, &thresh[ BLIS_NT ],
+	  BLIS_KT, &thresh[ BLIS_KT ],
+	  cntx
+	);
+
+
+	// -- Set level-3 small/unpacked handlers ----------------------------------
+
+	vfuncs = bli_cntx_l3_sup_handlers_buf( cntx );
+
+	// Initialize all of the function pointers to NULL;
+	for ( i = 0; i < BLIS_NUM_LEVEL3_OPS; ++i ) vfuncs[ i ] = NULL;
+
+	// The level-3 sup handlers are oapi-based, so we only set one slot per
+	// operation.
+
+	// Set the gemm slot to the default gemm sup handler.
+	vfuncs[ BLIS_GEMM ]  = bli_gemmsup_ref;
+	vfuncs[ BLIS_GEMMT ] = bli_gemmtsup_ref;
+
+
+	// -- Set level-3 small/unpacked micro-kernels and preferences -------------
+
+	funcs  = bli_cntx_l3_sup_kers_buf( cntx );
+	mbools = bli_cntx_l3_sup_kers_prefs_buf( cntx );
+
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_RRR ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_RRC ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_RCR ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_RCC ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_CRR ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_CRC ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_CCR ] );
+	// bli_func_set_dt( bli_sgemmsup_r_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_CCC ] );
+
+	// Register the general-stride/generic ukernel to the "catch-all" slot
+	// associated with the BLIS_XXX enum value. This slot will be queried if
+	// *any* operand is stored with general stride.
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_sgemmsup_g_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_XXX ] );
+
+
+	// Set the l3 sup ukernel storage preferences.
+	//                                       s      d      c      z
+	bli_mbool_init( &mbools[ BLIS_RRR ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_RRC ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_RCR ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_RCC ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_CRR ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_CRC ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_CCR ],  TRUE,  TRUE,  TRUE,  TRUE );
+	bli_mbool_init( &mbools[ BLIS_CCC ],  TRUE,  TRUE,  TRUE,  TRUE );
+
+	bli_mbool_init( &mbools[ BLIS_XXX ],  TRUE,  TRUE,  TRUE,  TRUE );
+
+
+	// -- Set level-1f kernels -------------------------------------------------
+
+	funcs = bli_cntx_l1f_kers_buf( cntx );
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_saxpy2v_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_AXPY2V_KER ] );
+	// bli_func_set_dt( bli_sdotaxpyv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_DOTAXPYV_KER ] );
+	// bli_func_set_dt( bli_saxpyf_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_AXPYF_KER ] );
+	// bli_func_set_dt( bli_sdotxf_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_DOTXF_KER ] );
+	// bli_func_set_dt( bli_sdotxaxpyf_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_DOTXAXPYF_KER ] );
+
+
+	// -- Set level-1v kernels -------------------------------------------------
+
+	funcs = bli_cntx_l1v_kers_buf( cntx );
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_saddv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_ADDV_KER ] );
+	// bli_func_set_dt( bli_samaxv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_AMAXV_KER ] );
+	// bli_func_set_dt( bli_saxpbyv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_AXPBYV_KER ] );
+	// bli_func_set_dt( bli_saxpyv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_AXPYV_KER ] );
+	// bli_func_set_dt( bli_scopyv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_COPYV_KER ] );
+	// bli_func_set_dt( bli_sdotv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_DOTV_KER ] );
+	// bli_func_set_dt( bli_sdotxv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_DOTXV_KER ] );
+	// bli_func_set_dt( bli_sinvertv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_INVERTV_KER ] );
+	// bli_func_set_dt( bli_sscalv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_SCALV_KER ] );
+	// bli_func_set_dt( bli_sscal2v_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_SCAL2V_KER ] );
+	// bli_func_set_dt( bli_ssetv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_SETV_KER ] );
+	// bli_func_set_dt( bli_ssubv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_SUBV_KER ] );
+	// bli_func_set_dt( bli_sswapv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_SWAPV_KER ] );
+	// bli_func_set_dt( bli_sxpbyv_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_XPBYV_KER ] );
+
+
+	// -- Set level-1m (packm/unpackm) kernels ---------------------------------
+
+	funcs = bli_cntx_packm_kers_buf( cntx );
+
+	// Initialize all packm kernel func_t entries to NULL.
+	for ( i = BLIS_PACKM_0XK_KER; i <= BLIS_PACKM_31XK_KER; ++i )
+	{
+		bli_func_init_null( &funcs[ i ] );
+	}
+
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_spackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_spackm_3xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_3XK_KER ] );
+	// bli_func_set_dt( bli_spackm_4xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_4XK_KER ] );
+	// bli_func_set_dt( bli_spackm_6xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_6XK_KER ] );
+	// bli_func_set_dt( bli_spackm_8xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_8XK_KER ] );
+	// bli_func_set_dt( bli_spackm_10xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_10XK_KER ] );
+	// bli_func_set_dt( bli_spackm_12xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_12XK_KER ] );
+	// bli_func_set_dt( bli_spackm_14xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_14XK_KER ] );
+	// bli_func_set_dt( bli_spackm_16xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_16XK_KER ] );
+	// bli_func_set_dt( bli_spackm_24xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_PACKM_24XK_KER ] );
+
+	funcs = bli_cntx_unpackm_kers_buf( cntx );
+
+	// Initialize all packm kernel func_t entries to NULL.
+	for ( i = BLIS_UNPACKM_0XK_KER; i <= BLIS_UNPACKM_31XK_KER; ++i )
+	{
+		bli_func_init_null( &funcs[ i ] );
+	}
+
+	// TODO: Init only single precision functions
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+	// bli_func_set_dt( bli_sunpackm_2xk_haswell_ref, BLIS_FLOAT,    &funcs[ BLIS_UNPACKM_2XK_KER ] );
+
+
+	// -- Set miscellaneous fields ---------------------------------------------
+
+	bli_cntx_set_method( BLIS_NAT, cntx );
+
+	bli_cntx_set_schema_a_block( BLIS_PACKED_ROW_PANELS, cntx );
+	bli_cntx_set_schema_b_panel( BLIS_PACKED_COL_PANELS, cntx );
+	bli_cntx_set_schema_c_panel( BLIS_NOT_PACKED,        cntx );
+
+	//bli_cntx_set_anti_pref( FALSE, cntx );
+
+	//bli_cntx_set_membrk( bli_membrk_query(), cntx );
+}
+#endif
 __attribute__((visibility("default")))  void neo_sssxpbys_mxn( const dim_t m, const dim_t n, float*    restrict x, const inc_t rs_x, const inc_t cs_x,
                                                             float*    restrict beta,
                                                             float*    restrict y, const inc_t rs_y, const inc_t cs_y )

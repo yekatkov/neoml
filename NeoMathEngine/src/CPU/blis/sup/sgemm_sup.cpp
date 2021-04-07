@@ -64,17 +64,19 @@ static inline void bli_sgemmsup_ref_var2m
 	/* If k < 1 or alpha is zero, scale by beta and return. */
 	if ( k < 1 || bli_seq0( *alpha ) )
 	{
-		bli_sscalm
-		(
-		  BLIS_NO_CONJUGATE,
-		  0,
-		  BLIS_NONUNIT_DIAG,
-		  BLIS_DENSE,
-		  m, n,
-		  beta,
-		  c, rs_c, cs_c
-		);
-		return;
+		assert( false );
+		// Isn't applied for convolution case
+//		bli_sscalm
+//		(
+//		  BLIS_NO_CONJUGATE,
+//		  0,
+//		  BLIS_NONUNIT_DIAG,
+//		  BLIS_DENSE,
+//		  m, n,
+//		  beta,
+//		  c, rs_c, cs_c
+//		);
+//		return;
 	}
 
 	/* Query the context for various blocksizes. */
@@ -421,16 +423,18 @@ static inline void bli_sgemmsup_ref_var1n
 	/* If k < 1 or alpha is zero, scale by beta and return. */
 	if ( k < 1 || bli_seq0( *alpha ) )
 	{
-		bli_sscalm
-		(
-		  BLIS_NO_CONJUGATE,
-		  0,
-		  BLIS_NONUNIT_DIAG,
-		  BLIS_DENSE,
-		  m, n,
-		  beta,
-		  c, rs_c, cs_c
-		);
+		// Isn't applied for convolution case
+		assert( false );
+//		bli_sscalm
+//		(
+//		  BLIS_NO_CONJUGATE,
+//		  0,
+//		  BLIS_NONUNIT_DIAG,
+//		  BLIS_DENSE,
+//		  m, n,
+//		  beta,
+//		  c, rs_c, cs_c
+//		);
 		return;
 	}
 

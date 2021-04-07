@@ -402,8 +402,6 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 	// Превышает размер кэша L2!!!!
 	const int tempDataSize = curThreadCount * cacheItemCount * desc.Filter.ObjectSize();
 
-	CTimer t0, t1;
-
 	CFloatHandleStackVar tempData( mathEngine(), tempDataSize );
 	float* tempDataRaw = GetRaw( tempData.GetHandle() );
 	CFloatHandleStackVar R( mathEngine(), desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount() );
@@ -427,6 +425,8 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 				float* resultDataPtr = resultData + ( start + index ) * filterObjectCount;
 				float* rDataPtr = rRaw + ( start + index ) * filterObjectCount;
 
+				CTimer t0, t1, t2;
+
 				t0.Start();
 				multiplyMatrixByTransposedMatrix( tempDataPtr, size, filterObjectSize,
 					filterObjectSize, filterData, filterObjectCount, filterObjectSize, resultDataPtr,
@@ -440,33 +440,37 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 				t1.Stop();
 
 				if( freeTermData != nullptr ) {
+					t2.Start();
 					addVectorToMatrixRows( resultDataPtr, resultDataPtr, size, filterObjectCount, filterObjectCount,
 						filterObjectCount, GetRaw( *freeTermData ) );
+					t2.Stop();
 
 					addVectorToMatrixRows( rDataPtr, rDataPtr, size, filterObjectCount, filterObjectCount,
 						filterObjectCount, GetRaw( *freeTermData ) );
 				}
 
 				index += size;
+				printf("_algo0_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), size, filterObjectCount, filterObjectSize );
 			}
 		}
 	}
 
-	float* f1 = rRaw;
-	float* f2 = resultData;
-	for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
-		const float e = max(abs(*f2 / 1e3), 5e-3 );
-		const float sub = *f1 - *f2;
-		if( !( sub > -e && sub < e ) ) {
-			ASSERT_EXPR( false);
-		}
-		f1++;
-		f2++;
-	}
 
-	ASSERT_EXPR( desc.Result.Width() == desc.Source.Width() );
-	ASSERT_EXPR( desc.Result.Height() == desc.Source.Height() );
-	CAlgoInfo::AddInfo( { { t0, t1 }, { desc.Source.Width(), desc.Source.Height(), desc.Filter.Channels(), desc.Filter.ObjectCount() } }, 0 );
+//	float* f1 = rRaw;
+//	float* f2 = resultData;
+//	for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
+//		const float e = max(abs(*f2 / 1e3), 5e-3 );
+//		const float sub = *f1 - *f2;
+//		if( !( sub > -e && sub < e ) ) {
+//			ASSERT_EXPR( false);
+//		}
+//		f1++;
+//		f2++;
+//	}
+
+//	ASSERT_EXPR( desc.Result.Width() == desc.Source.Width() );
+//	ASSERT_EXPR( desc.Result.Height() == desc.Source.Height() );
+	//CAlgoInfo::AddInfo( { { t0, t1 }, { desc.Source.Width(), desc.Source.Height(), desc.Filter.Channels(), desc.Filter.ObjectCount() } }, 0 );
 }
 
 void CCpuMathEngine::blobConvolutionForwardAlgo1( const CCpuConvolutionDesc& desc, const float* sourceData,
@@ -495,6 +499,10 @@ void CCpuMathEngine::blobConvolutionForwardAlgo1( const CCpuConvolutionDesc& des
 	float* outputTransposedData = GetRaw( stackBuffer.GetHandle() );
 	float* tempBlobData = outputTransposedData + outputTransposedDataSize;
 
+	CFloatHandleStackVar stackBuffer1( mathEngine(), outputTransposedDataSize + tempBlobDataSize );
+	float* outputTransposedData1 = GetRaw( stackBuffer1.GetHandle() );
+	float* tempBlobData1= outputTransposedData1 + outputTransposedDataSize;
+
 	NEOML_OMP_NUM_THREADS( curThreadCount )
 	{
 		const CBlobDesc& source = desc.Source;
@@ -510,31 +518,62 @@ void CCpuMathEngine::blobConvolutionForwardAlgo1( const CCpuConvolutionDesc& des
 				const int tempObjectIndex = source.ObjectCount() <= tempObjectCount ? batch : OmpGetThreadNum();
 				float* outputTransposedPtr = outputTransposedData + tempObjectIndex * outputTransposedDataObjectSize
 					+ resultStart * outputTransposedDataRowSize;
+				float* outputTransposedPtr1 = outputTransposedData1 + tempObjectIndex * outputTransposedDataObjectSize
+					+ resultStart * outputTransposedDataRowSize;
 				float* tempBlobPtr = tempBlobData + tempObjectIndex * tempBlobDataObjectSize
+					+ resultStart * tempBlobDataRowSize;
+				float* tempBlobPtr1 = tempBlobData1 + tempObjectIndex * tempBlobDataObjectSize
 					+ resultStart * tempBlobDataRowSize;
 
 				// Fill the temporary matrix
 				if( desc.DilationHeight > 1 || desc.DilationWidth > 1 ) {
 					createDilationTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr );
+					createDilationTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr1 );
 				} else {
 					createTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr );
+					createTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr1 );
 				}
+
+				CTimer t0, t1, t2;
 
 				// Apply the filter to the temporary matrix
 				if( freeTermData != nullptr ) {
 					setVectorToMatrixRows( outputTransposedPtr, result.Height() * resultCount, outputChannels, freeTermDataRaw );
-
+					setVectorToMatrixRows( outputTransposedPtr1, result.Height() * resultCount, outputChannels, freeTermDataRaw );
+					t0.Start();
 					multiplyMatrixByTransposedMatrixAndAdd( tempBlobPtr, result.Height() * resultCount, filter.ObjectSize(),
 						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr,
 						filter.BatchWidth() );
+					t0.Stop();
+					t1.Start();
+					multiplyMatrixByTransposedMatrixAndAdd_custom( tempBlobPtr1, result.Height() * resultCount, filter.ObjectSize(),
+						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr1,
+						filter.BatchWidth() );
+					t1.Stop();
+
+//					float* f1 = tempBlobPtr;
+//					float* f2 = tempBlobPtr1;
+//					for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
+//						const float e = max(abs(*f2 / 1e3), 5e-3 );
+//						const float sub = *f1 - *f2;
+//						if( !( sub > -e && sub < e ) ) {
+//							ASSERT_EXPR( false);
+//						}
+//						f1++;
+//						f2++;
+//					}
 				} else {
 					multiplyMatrixByTransposedMatrix( tempBlobPtr, result.Height() * resultCount, filter.ObjectSize(),
 						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr,
 						filter.BatchWidth() );
 				}
 
+				t2.Start();
 				// Transpose the result
 				transposeResult( desc, outputTransposedPtr, batch, resultStart, resultCount, resultData );
+				t2.Stop();
+
+				printf("_algo1_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), result.Height() * resultCount, filter.BatchWidth(), filter.ObjectSize() );
 			}
 		}
 	}
@@ -549,10 +588,14 @@ void CCpuMathEngine::BlobConvolution( const CConvolutionDesc& convDesc, const CF
 	float* resultRaw = GetRaw( result );
 
 	const CCpuConvolutionDesc& desc = static_cast<const CCpuConvolutionDesc&>( convDesc );
-	printf("_mnk_;%d;%d;%d\n", desc.Result.Width() * desc.Result.Height(), desc.Filter.ObjectCount(), desc.Filter.ObjectSize() );
+	//printf("_mnk_;%d;%d;%d\n", desc.Result.Width() * desc.Result.Height(), desc.Filter.ObjectCount(), desc.Filter.ObjectSize() );
 
 	if( desc.SimdConvolutionDesc != nullptr ) {
+		CTimer t;
+		t.Start();
 		simdMathEngine->BlobConvolution( *desc.SimdConvolutionDesc, sourceRaw, filterRaw, freeTermRaw, resultRaw );
+		t.Stop();
+		printf("_avx_;0;%.4f;0;%d;%d;%d\n", t.GetTimeInMs(), desc.Result.Width() * desc.Result.Height(), desc.Filter.ObjectCount(), desc.Filter.ObjectSize() );
 		return;
 	}
 
@@ -576,6 +619,7 @@ void CCpuMathEngine::BlobConvolution( const CConvolutionDesc& convDesc, const CF
 		}
 		case CA_1x1:
 			{
+				printf("1x1\n");
 				bool needsFlatten = desc.Source.Depth() != 1;
 
 				blob3dConvolution1x1x1( needsFlatten ? flatten( desc.Source ) : desc.Source, needsFlatten ? flatten( desc.Filter ) : desc.Filter,

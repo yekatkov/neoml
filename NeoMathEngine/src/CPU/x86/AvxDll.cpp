@@ -92,6 +92,7 @@ bool CAvxDll::loadFunctions()
 
 bool CAvxDll::isAvxAvailable()
 {
+//	return false;
 	// Check for AVX
 #if FINE_PLATFORM(FINE_WINDOWS)
 

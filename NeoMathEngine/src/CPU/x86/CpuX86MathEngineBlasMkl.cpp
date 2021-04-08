@@ -32,15 +32,14 @@ limitations under the License.
 #else
 #error Unknown platform
 #endif
-#else
+#endif
 #include <CPUInfo.h>
 #include <MatrixMultiplyingInterleavedCommon/MatrixMultiplying.h>
 #include <MatrixMultiplyingInterleavedCommon/CpuMemoryHelper.h>
 
 // Cache sizes
 // Find the acceptable values or get them from CPU info
-static constexpr CCPUInfo CpuInfo( 0x60000, 0x180000, 0x900000 );
-#endif
+static constexpr CCPUInfo CpuInfo( 32 * 1024, 256 * 1024, 2 * 1024 * 1024 );
 
 namespace NeoML {
 
@@ -95,6 +94,17 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrix(const float* first, int fi
 #endif
 }
 
+void CCpuMathEngine::multiplyMatrixByTransposedMatrix_custom( const float* first, int firstHeight,
+	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
+	float* result, int resultRowSize )
+{
+	ASSERT_EXPR( firstWidth <= firstRowSize );
+	ASSERT_EXPR( firstWidth <= secondRowSize );
+
+//	nullify( result, firstHeight, secondHeight, resultRowSize );
+	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
+		result, resultRowSize, firstHeight, secondHeight, firstWidth );
+}
 void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd( const float* first, int firstHeight,
 	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
 	float* result, int resultRowSize )
@@ -106,6 +116,14 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd( const float* first,
 	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
 		result, resultRowSize, firstHeight, secondHeight, firstWidth );
 #endif
+}
+
+void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd_custom( const float* first, int firstHeight,
+	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
+	float* result, int resultRowSize )
+{
+	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
+		result, resultRowSize, firstHeight, secondHeight, firstWidth );
 }
 
 // result = first * T(second). The result size is firstHeight * secondHeight:

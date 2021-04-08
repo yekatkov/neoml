@@ -55,6 +55,24 @@ template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBa
 using CMicroKernelDefault = CMicroKernelBase<1, 1>;
 template <bool Transpose, size_t Len> using CInterleaverDefault = CInterleaverBase<Transpose, Len>;
 
+struct CMicroKernel_6x16 : public CMicroKernelBase<6, 16> {
+	static void Calculate( const float* aPtr, const float* bPtr, float* cPtr, size_t cRowSize, size_t k ) {
+		float alpha = 1.0;
+		float beta = 0.0;
+		neo_sgemm_haswell_asm_6x16
+			 (
+			   k,
+			   &alpha,
+			   const_cast<float*>(aPtr),
+			   const_cast<float*>(bPtr),
+			   &beta,
+			   cPtr, cRowSize, 1,
+			   0,
+			   0
+			 );
+	}
+};
+
 #endif
 
 template<bool ATransposed, bool BTransposed, class MemoryHandler, class Engine, class CCPUInfo>
@@ -64,6 +82,6 @@ inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,
 	float* cPtr, size_t cRowSize,
 	size_t m, size_t n, size_t k)
 {
-	CMatrixMultiplier<CMicroKernelDefault, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::Multiply
+	CMatrixMultiplier<CMicroKernel_6x16, CInterleaverDefault, ATransposed, BTransposed, MemoryHandler, Engine>::MyMultiply
 		(engine, cpuInfo, aPtr, aRowSize, bPtr, bRowSize, cPtr, cRowSize, m, n, k);
 }

@@ -4,6 +4,12 @@ else()
     add_library(${PROJECT_NAME} STATIC common.cpp)
 endif()
 
+file(GLOB BLIS_SRC1  CPU/blis/*.cpp)
+set(BLIS_SOURCES
+    ${BLIS_SRC1}
+    CPU/blis/inc/neo_blis.h
+    )
+
 target_sources(${PROJECT_NAME}
     PRIVATE
 
@@ -44,6 +50,7 @@ target_sources(${PROJECT_NAME}
     CPU/CpuRandom.h
     CPU/CpuMathEnginePrivate.h
     CPU/CpuMathEngineOmp.h
+    Timer.cpp
 
     CPU/MatrixMultiplyingInterleavedCommon/CpuMemoryHelper.h
     CPU/MatrixMultiplyingInterleavedCommon/MatrixMultiplier.h
@@ -61,6 +68,8 @@ target_sources(${PROJECT_NAME}
     ../include/NeoMathEngine/NeoMathEngine.h
     ../include/NeoMathEngine/NeoMathEngineException.h
     ../include/NeoMathEngine/SimdMathEngine.h
+    ../include/NeoMathEngine/Timer.h
+    ${BLIS_SOURCES}
 )
 
 add_library(NeoML::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -76,6 +85,7 @@ target_include_directories(${PROJECT_NAME}
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/CPU>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/CPU/blis/inc>
 )
 
 if(NOT USE_FINE_OBJECTS)
@@ -146,7 +156,7 @@ else()
 endif()
 
 # GPU specific source and settings
-if((WIN32 OR LINUX) AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+if(FALSE)
 
     if(USE_FINE_OBJECTS)
         # The CUDA must exist at $ENV{ROOT}/ThirdParty
@@ -364,14 +374,15 @@ endif()
 
 # OpenMP
 if(NOT IOS AND NOT (DARWIN AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64?"))
-    link_openmp(${PROJECT_NAME})
+    #link_openmp(${PROJECT_NAME})
 endif()
 
 # SSE2
 if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_compile_options(${PROJECT_NAME} PRIVATE /arch:SSE2)
 elseif(((LINUX OR DARWIN) AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86.*") OR (ANDROID AND ANDROID_ABI MATCHES "^x86.*") OR (IOS_ARCH MATCHES "^x86.*"))
-    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-msse2>)
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2 -mfma>)
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2 -mfma>)
 endif()
 
 # Arm neon

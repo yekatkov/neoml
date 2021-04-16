@@ -540,7 +540,7 @@ struct CMicroKernel_6x1 : public CMicroKernelBase<6, 1> {
 				c2t = _mm256_add_ps( c2t, c3t );
 				c0 = _mm256_add_ps( c0, c2t );
 
-				// Decrease cRowSize because _mm256_storeu2_m128 treate start address as cPtr, but we should shift left our'c' value by 2.
+				// Decrease cRowSize because _mm256_storeu2_m128 treate start address as cPtr, but we should shift left our'c' value by 1.
 				cRowSize--;
 				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( 0, 0, 0, 0, 0, 0, 0, -1 ), c0 );
 				cPtr += cRowSize;

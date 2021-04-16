@@ -255,9 +255,11 @@ struct CMicroKernel_6x8 : public CMicroKernelBase<6, 8> {
 	}
 };
 
-#define PERMUTE2( p0, p1 ) ( ( p0 << 0 ) + ( p1 << 4 ) )
-#define PERMUTE4( p0, p1, p2, p3 ) ( ( p0 << 0 ) + ( p1 << 2 ) + ( p2 << 4 ) + ( p3 << 6 ) )
-#define PERMUTE8( p0, p1, p2, p3, p4, p5, p6, p7 ) _mm256_set_epi32( p0, p1, p2, p3, p4, p5, p6, p7 )
+#define PERMUTE2( p1, p0 ) ( ( p0 << 0 ) + ( p1 << 4 ) )
+#define PERMUTE4( p3, p2, p1, p0 ) ( ( p0 << 0 ) + ( p1 << 2 ) + ( p2 << 4 ) + ( p3 << 6 ) )
+#define PERMUTE8( p7, p6, p5, p4, p3, p2, p1, p0 ) _mm256_set_epi32( p7, p6, p5, p4, p3, p2, p1, p0 )
+#define BLEND8( b7, b6, b5, b4, b3, b2, b1, b0 ) ( b0 + ( b1 << 1 ) + ( b2 << 2 ) + ( b3 << 3 ) + \
+	( b4 << 4 ) + ( b5 << 5 ) + ( b6 << 6 ) + ( b7 << 7 ) )
 
 struct CMicroKernel_6x4 : public CMicroKernelBase<6, 4> {
 	static void Calculate( const float* aPtr, const float* bPtr, float* cPtr, size_t cRowSize, size_t k ) {
@@ -282,8 +284,8 @@ struct CMicroKernel_6x4 : public CMicroKernelBase<6, 4> {
 					
 					a00 = _mm256_permutevar_ps( a0, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 					a01 = _mm256_permutevar_ps( a0, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
-					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 5, 5, 5, 5, 4, 4, 4, 4 ) );
-					a10 = _mm256_permutevar_ps( a1, PERMUTE8( 7, 7, 7, 7, 6, 6, 6, 6 ) );
+					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					a10 = _mm256_permutevar_ps( a1, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
 					a11 = _mm256_permutevar_ps( a2, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 					a12 = _mm256_permutevar_ps( a2, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
 
@@ -305,12 +307,12 @@ struct CMicroKernel_6x4 : public CMicroKernelBase<6, 4> {
 					b1 = _mm256_permute2f128_ps( b, b, PERMUTE2( 1, 1 ) );
 					bPtr += 8;
 
-					a00 = _mm256_permutevar_ps( a0, PERMUTE8( 5, 5, 5, 5, 4, 4, 4, 4 ) );
-					a01 = _mm256_permutevar_ps( a0, PERMUTE8( 7, 7, 7, 7, 6, 6, 6, 6 ) );
+					a00 = _mm256_permutevar_ps( a0, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					a01 = _mm256_permutevar_ps( a0, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
 					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 					a10 = _mm256_permutevar_ps( a1, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
-					a11 = _mm256_permutevar_ps( a2, PERMUTE8( 5, 5, 5, 5, 4, 4, 4, 4 ) );
-					a12 = _mm256_permutevar_ps( a2, PERMUTE8( 7, 7, 7, 7, 6, 6, 6, 6 ) );
+					a11 = _mm256_permutevar_ps( a2, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					a12 = _mm256_permutevar_ps( a2, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
 
 					c0 = _mm256_fmadd_ps( a00, b0, c0 );
 					c1 = _mm256_fmadd_ps( a01, b0, c1 );
@@ -333,8 +335,8 @@ struct CMicroKernel_6x4 : public CMicroKernelBase<6, 4> {
 
 					a00 = _mm256_permutevar_ps( a0, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 					a01 = _mm256_permutevar_ps( a0, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
-					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 5, 5, 5, 5, 4, 4, 4, 4 ) );
-					a10 = _mm256_permutevar_ps( a1, PERMUTE8( 7, 7, 7, 7, 6, 6, 6, 6 ) );
+					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					a10 = _mm256_permutevar_ps( a1, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
 					a11 = _mm256_permutevar_ps( a2, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 					a12 = _mm256_permutevar_ps( a2, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
 
@@ -353,7 +355,7 @@ struct CMicroKernel_6x4 : public CMicroKernelBase<6, 4> {
 
 					a00 = _mm256_permutevar_ps( a0, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 					a01 = _mm256_permutevar_ps( a0, PERMUTE8( 3, 3, 3, 3, 2, 2, 2, 2 ) );
-					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 5, 5, 5, 5, 4, 4, 4, 4 ) );
+					a02 = _mm256_permutevar_ps( a1, PERMUTE8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
 
 					c0 = _mm256_fmadd_ps( a00, b0, c0 );
 					c1 = _mm256_fmadd_ps( a01, b0, c1 );
@@ -367,11 +369,113 @@ struct CMicroKernel_6x4 : public CMicroKernelBase<6, 4> {
 				_mm256_storeu2_m128( cPtr + cRowSize, cPtr, _mm256_add_ps( c2, _mm256_loadu2_m128( cPtr + cRowSize, cPtr ) ) );
 	}
 };
+
+struct CMicroKernel_6x2 : public CMicroKernelBase<6, 2> {
+	static void Calculate( const float* aPtr, const float* bPtr, float* cPtr, size_t cRowSize, size_t k ) {
+				__m256 c0 = _mm256_setzero_ps();
+				__m256 c1 = _mm256_setzero_ps();
+				__m256 c2 = _mm256_setzero_ps();
+
+				__m256 b00, b01, b02, b10, b11, b12;
+				__m256 a00, a01, a02, a10, a11, a12;
+
+				// TODO: Check bPtr align
+				double const * bPtrDouble = reinterpret_cast<double const *>( bPtr );
+				__m128 const * aPtrVec = reinterpret_cast<__m128 const *>( aPtr );
+
+				for( ; k >= 4; k -= 4 ) {
+					__m256d b = _mm256_loadu_pd( bPtrDouble );
+					bPtrDouble += 4;
+
+					a00 = _mm256_broadcast_ps( aPtrVec++ );
+					a01 = _mm256_broadcast_ps( aPtrVec++ );
+					a02 = _mm256_broadcast_ps( aPtrVec++ );
+
+					b00 = _mm256_castpd_ps( _mm256_permute4x64_pd( b, PERMUTE4( 0, 0, 0, 0 ) ) );
+					b02 = _mm256_castpd_ps( _mm256_permute4x64_pd( b, PERMUTE4( 1, 1, 1, 1 ) ) );
+					b10 = _mm256_castpd_ps( _mm256_permute4x64_pd( b, PERMUTE4( 2, 2, 2, 2 ) ) );
+					b12 = _mm256_castpd_ps( _mm256_permute4x64_pd( b, PERMUTE4( 3, 3, 3, 3 ) ) );
+
+					a10 = _mm256_broadcast_ps( aPtrVec++ );
+					a11 = _mm256_broadcast_ps( aPtrVec++ );
+					a12 = _mm256_broadcast_ps( aPtrVec++ );
+
+					b01 = _mm256_blend_ps( b00, b02, BLEND8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					b11 = _mm256_blend_ps( b10, b12, BLEND8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+
+					a00 = _mm256_permutevar_ps( a00, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a01 = _mm256_permutevar_ps( a01, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a02 = _mm256_permutevar_ps( a02, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a10 = _mm256_permutevar_ps( a10, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a11 = _mm256_permutevar_ps( a11, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a12 = _mm256_permutevar_ps( a12, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+
+					c0 = _mm256_fmadd_ps( a00, b00, c0 );
+					c1 = _mm256_fmadd_ps( a01, b01, c1 );
+					c2 = _mm256_fmadd_ps( a02, b02, c2 );
+					c0 = _mm256_fmadd_ps( a10, b10, c0 );
+					c1 = _mm256_fmadd_ps( a11, b11, c1 );
+					c2 = _mm256_fmadd_ps( a12, b12, c2 );
+				}
+
+				if( k >= 2 ) {
+					k -= 2;
+					b00 = _mm256_castpd_ps( _mm256_broadcast_sd( bPtrDouble++ ) );
+					b02 = _mm256_castpd_ps( _mm256_broadcast_sd( bPtrDouble++ ) );
+					a00 = _mm256_broadcast_ps( aPtrVec++ );
+					a01 = _mm256_broadcast_ps( aPtrVec++ );
+					a02 = _mm256_broadcast_ps( aPtrVec++ );
+
+					b01 = _mm256_blend_ps( b00, b02, BLEND8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					a00 = _mm256_permutevar_ps( a00, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a01 = _mm256_permutevar_ps( a01, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a02 = _mm256_permutevar_ps( a02, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+
+					c0 = _mm256_fmadd_ps( a00, b00, c0 );
+					c1 = _mm256_fmadd_ps( a01, b01, c1 );
+					c2 = _mm256_fmadd_ps( a02, b02, c2 );
+				}
+
+				if( k == 1 ) {
+					b00 = _mm256_castpd_ps( _mm256_broadcast_sd( bPtrDouble++ ) );
+					b02 = _mm256_setzero_ps();
+					a00 = _mm256_broadcast_ps( aPtrVec++ );
+					a01 = _mm256_broadcast_ps( aPtrVec++ );
+
+					b01 = _mm256_blend_ps( b00, b02, BLEND8( 1, 1, 1, 1, 0, 0, 0, 0 ) );
+					a00 = _mm256_permutevar_ps( a00, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+					a01 = _mm256_permutevar_ps( a01, PERMUTE8( 3, 3, 2, 2, 1, 1, 0, 0 ) );
+
+					c0 = _mm256_fmadd_ps( a00, b00, c0 );
+					c1 = _mm256_fmadd_ps( a01, b01, c1 );
+				}
+
+				__m256 c0t = _mm256_castpd_ps( _mm256_permute2f128_pd( _mm256_castps_pd( c1 ), _mm256_castps_pd( c2 ), PERMUTE2( 2, 1 ) ) );
+				__m256 c1t = _mm256_castpd_ps( _mm256_permute2f128_pd( _mm256_castps_pd( c2 ), _mm256_castps_pd( c2 ), PERMUTE2( 4, 1 ) ) );
+				c0 = _mm256_add_ps( c0, c0t );
+				c1 = _mm256_add_ps( c1, c1t );
+
+
+				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( 0, 0, 0, 0, 0, 0, -1, -1 ), c0 );
+				// Decrease cRowSize because _mm256_storeu2_m128 treate start address as cPtr, but we should shift left our'c' value by 2.
+				cPtr += cRowSize - 2;
+				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( 0, 0, 0, 0, -1, -1, 0, 0 ), c0 );
+				cPtr += cRowSize - 2;
+				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( 0, 0, -1, -1, 0, 0, 0, 0 ), c0 );
+				cPtr += cRowSize - 2;
+				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( -1, -1, 0, 0, 0, 0, 0, 0 ), c0 );
+				// Get back start address
+				cPtr += cRowSize + 6;
+				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( 0, 0, 0, 0, 0, 0, -1, -1 ), c1 );
+				cPtr += cRowSize - 2;
+				_mm256_maskstore_ps( cPtr, _mm256_set_epi32( 0, 0, 0, 0, -1, -1, 0, 0 ), c1 );
+	}
+};
 #endif
 
 bool HasMyKernel = getenv("MY_KERNEL") != nullptr;
 
-using CKernelCombi = CKernelCombineHorizontal<CMicroKernel_6x16, CMicroKernel_6x8, CMicroKernel_6x4>;
+using CKernelCombi = CKernelCombineHorizontal<CMicroKernel_6x16, CMicroKernel_6x8, CMicroKernel_6x4, CMicroKernel_6x2>;
 
 template<bool ATransposed, bool BTransposed, class MemoryHandler, class Engine, class CCPUInfo>
 inline void MultiplyMatrix(Engine *engine, const CCPUInfo &cpuInfo,

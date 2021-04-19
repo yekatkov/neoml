@@ -217,6 +217,121 @@ struct CInterleaverBase<true, Len> {
 
 // Prepare and transpose the matrix
 template<>
+struct CInterleaverBase<true, 16> {
+	static void Prepare( float* out, const float* in, size_t stride, size_t width, size_t height )
+	{
+		const int Len = 16;
+		__m256i inputStrideMult = _mm256_set_epi32( 7, 6, 5, 4, 3, 2, 1, 0 );
+		__m256i inputStride0 = _mm256_set1_epi32( stride );
+		__m256i inputStride1 = _mm256_set1_epi32( stride * 8 );
+		inputStride0 = _mm256_mullo_epi32( inputStride0, inputStrideMult );
+		inputStride1 = _mm256_add_epi32( inputStride1, inputStride0);
+
+		const size_t iStep = stride * Len;
+		const size_t oStep = width * Len;
+
+		for( ; height >= Len; height -= Len ) {
+			const float* tempIn = in;
+			float* tempOut = out;
+			size_t tempWidth = width;
+			for( ; tempWidth >= 4; tempWidth -= 4 ) {
+				__m256 a0 = _mm256_i32gather_ps( tempIn, inputStride0, 4 );
+				__m256 a1 = _mm256_i32gather_ps( tempIn, inputStride1, 4 );
+				__m256 a2 = _mm256_i32gather_ps( tempIn + 1 , inputStride0, 4 );
+				__m256 a3 = _mm256_i32gather_ps( tempIn + 1, inputStride1, 4 );
+				__m256 a4 = _mm256_i32gather_ps( tempIn + 2, inputStride0, 4 );
+				__m256 a5 = _mm256_i32gather_ps( tempIn + 2, inputStride1, 4 );
+				__m256 a6 = _mm256_i32gather_ps( tempIn + 3, inputStride0, 4 );
+				__m256 a7 = _mm256_i32gather_ps( tempIn + 3, inputStride1, 4 );
+
+				_mm256_storeu_ps( tempOut + 0, a0 );
+				_mm256_storeu_ps( tempOut + 8, a1 );
+				_mm256_storeu_ps( tempOut + 16, a2 );
+				_mm256_storeu_ps( tempOut + 24, a3 );
+				_mm256_storeu_ps( tempOut + 32, a4 );
+				_mm256_storeu_ps( tempOut + 40, a5 );
+				_mm256_storeu_ps( tempOut + 48, a6 );
+				_mm256_storeu_ps( tempOut + 56, a7 );
+
+				tempIn += 4;
+				tempOut += 64;
+			}
+
+			if( tempWidth != 0 ) {
+				CInterleaverBase<false, 1>::Transpose( tempOut, Len, tempIn, stride, Len, tempWidth );
+			}
+			in += iStep;
+			out += oStep;
+		}
+
+		height %= Len;
+		if( height > 0 ) {
+			CInterleaverBase<false, 1>::Transpose(out, Len, in, stride, height, width);
+			out += height;
+			const size_t len = (Len - height) * sizeof(float);
+			for( ; width > 0; --width ) {
+				memset(out, 0, len);
+				out += Len;
+			}
+		}
+	}
+};
+
+// Prepare and transpose the matrix
+template<>
+struct CInterleaverBase<true, 8> {
+	static void Prepare( float* out, const float* in, size_t stride, size_t width, size_t height )
+	{
+		const int Len = 8;
+		__m256i inputStrideMult = _mm256_set_epi32( 7, 6, 5, 4, 3, 2, 1, 0 );
+		__m256i inputStride0 = _mm256_set1_epi32( stride );
+		inputStride0 = _mm256_mullo_epi32( inputStride0, inputStrideMult );
+
+		const size_t iStep = stride * Len;
+		const size_t oStep = width * Len;
+
+		for( ; height >= Len; height -= Len ) {
+			const float* tempIn = in;
+			float* tempOut = out;
+			size_t tempWidth = width;
+
+			for( ; tempWidth >= 4; tempWidth -= 4 ) {
+				__m256 a0 = _mm256_i32gather_ps( tempIn, inputStride0, 4 );
+				__m256 a1 = _mm256_i32gather_ps( tempIn + 1, inputStride0, 4 );
+				__m256 a2 = _mm256_i32gather_ps( tempIn + 2 , inputStride0, 4 );
+				__m256 a3 = _mm256_i32gather_ps( tempIn + 3, inputStride0, 4 );
+
+				_mm256_storeu_ps( tempOut + 0, a0 );
+				_mm256_storeu_ps( tempOut + 8, a1 );
+				_mm256_storeu_ps( tempOut + 16, a2 );
+				_mm256_storeu_ps( tempOut + 24, a3 );
+
+				tempIn += 4;
+				tempOut += 32;
+			}
+
+			if( tempWidth != 0 ) {
+				CInterleaverBase<false, 1>::Transpose( tempOut, Len, tempIn, stride, Len, tempWidth );
+			}
+
+			in += iStep;
+			out += oStep;
+		}
+		height %= Len;
+		if( height > 0 ) {
+			CInterleaverBase<false, 1>::Transpose(out, Len, in, stride, height, width);
+			out += height;
+			const size_t len = (Len - height) * sizeof(float);
+			for( ; width > 0; --width ) {
+				memset(out, 0, len);
+				out += Len;
+			}
+		}
+	}
+};
+
+// Prepare and transpose the matrix
+template<>
 struct CInterleaverBase<true, 4> {
 	static void Prepare( float* out, const float* in, size_t stride, size_t width, size_t height )
 	{

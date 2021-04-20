@@ -69,12 +69,6 @@ CTimer t0,t1,t2;
 						filterData, newChannels, channels,
 						outputDataPtr, newChannels);
 					t0.Stop();
-					t1.Start();
-					multiplyMatrixByTransposedMatrixAndAdd_custom(sourceData + geomStart * channels,
-						geomCount, channels, channels,
-						filterData, newChannels, channels,
-						outputDataPtr, newChannels);
-					t1.Stop();
 					if( PrintTimers ) printf("_1x1[0]_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), geomCount, newChannels, channels );
 				}
 			}
@@ -105,12 +99,6 @@ CTimer t0,t1,t2;
 						filterData + channelStart * channels, channelCount, channels,
 						resultData + channelStart, newChannels);
 					t0.Stop();
-					t1.Start();
-					multiplyMatrixByTransposedMatrixAndAdd_custom(sourceData,
-						geomSize, channels, channels,
-						filterData + channelStart * channels, channelCount, channels,
-						resultData + channelStart, newChannels);
-					t1.Stop();
 					if( PrintTimers ) printf("_1x1[1]_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), geomSize, channelCount, channels );
 				}
 			}
@@ -154,12 +142,6 @@ CTimer t0,t1,t2;
 					filterData, newChannels, channels,
 					outputDataPtr, newChannels);
 			t0.Stop();
-			t1.Start();
-				multiplyMatrixByTransposedMatrixAndAdd_custom(repackedData + geomStart * channels,
-					geomCount, channels, channels,
-					filterData, newChannels, channels,
-					outputDataPtr, newChannels);
-			t1.Stop();
 				if( PrintTimers ) printf("_1x1[2]_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), geomCount, newChannels, channels );
 		}
 	}

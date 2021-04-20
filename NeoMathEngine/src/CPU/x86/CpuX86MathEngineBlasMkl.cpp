@@ -41,6 +41,7 @@ limitations under the License.
 // Find the acceptable values or get them from CPU info
 static constexpr CCPUInfo CpuInfo( 32 * 1024, 256 * 1024, 2 * 1024 * 1024 );
 
+static bool useMKL = getenv("USENEOML") == 0;
 namespace NeoML {
 
 void CCpuMathEngine::multiplyMatrixByMatrix( const float* first, int firstHeight,
@@ -51,14 +52,14 @@ void CCpuMathEngine::multiplyMatrixByMatrix( const float* first, int firstHeight
 	ASSERT_EXPR( secondWidth <= secondRowSize );
 	ASSERT_EXPR( secondWidth <= resultRowSize );
 
-#ifdef NEOML_USE_MKL
+	if( useMKL ) {
 	cblas_sgemm( CblasRowMajor, CblasNoTrans, CblasNoTrans, firstHeight, secondWidth, firstWidth,
 		1, first, firstRowSize, second, secondRowSize, 0, result, resultRowSize );
-#else
+	} else {
 	nullify( result, firstHeight, secondWidth, resultRowSize );
 	MultiplyMatrix<false, false, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
 		result, resultRowSize, firstHeight, secondWidth, firstWidth );
-#endif
+	}
 }
 
 void CCpuMathEngine::multiplyMatrixByMatrixAndAdd( const float* first, int firstHeight,
@@ -68,13 +69,12 @@ void CCpuMathEngine::multiplyMatrixByMatrixAndAdd( const float* first, int first
 	ASSERT_EXPR( firstWidth <= firstRowSize );
 	ASSERT_EXPR( secondWidth <= resultRowSize );
 
-#ifdef NEOML_USE_MKL
 	cblas_sgemm( CblasRowMajor, CblasNoTrans, CblasNoTrans, firstHeight, secondWidth, firstWidth,
 		1, first, firstRowSize, second, secondRowSize, 1, result, resultRowSize );
-#else
+
 	MultiplyMatrix<false, false, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
 		result, resultRowSize, firstHeight, secondWidth, firstWidth );
-#endif
+
 }
 
 void CCpuMathEngine::multiplyMatrixByTransposedMatrix(const float* first, int firstHeight,
@@ -84,46 +84,27 @@ void CCpuMathEngine::multiplyMatrixByTransposedMatrix(const float* first, int fi
 	ASSERT_EXPR(firstWidth <= firstRowSize);
 	ASSERT_EXPR(firstWidth <= secondRowSize);
 
-#ifdef NEOML_USE_MKL
+	if( useMKL ) {
 	cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, firstHeight, secondHeight, firstWidth,
 		1, first, firstRowSize, second, secondRowSize, 0, result, resultRowSize);
-#else
+	} else {
 	nullify( result, firstHeight, secondHeight, resultRowSize );
 	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
 		result, resultRowSize, firstHeight, secondHeight, firstWidth );
-#endif
+	}
 }
 
-void CCpuMathEngine::multiplyMatrixByTransposedMatrix_custom( const float* first, int firstHeight,
-	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
-	float* result, int resultRowSize )
-{
-	ASSERT_EXPR( firstWidth <= firstRowSize );
-	ASSERT_EXPR( firstWidth <= secondRowSize );
-
-//	nullify( result, firstHeight, secondHeight, resultRowSize );
-	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
-		result, resultRowSize, firstHeight, secondHeight, firstWidth );
-}
 void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd( const float* first, int firstHeight,
 	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
 	float* result, int resultRowSize )
 {
-#ifdef NEOML_USE_MKL
+	if( useMKL ) {
 	cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, firstHeight, secondHeight, firstWidth,
 		1, first, firstRowSize, second, secondRowSize, 1, result, resultRowSize);
-#else
+	} else {
 	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
 		result, resultRowSize, firstHeight, secondHeight, firstWidth );
-#endif
-}
-
-void CCpuMathEngine::multiplyMatrixByTransposedMatrixAndAdd_custom( const float* first, int firstHeight,
-	int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
-	float* result, int resultRowSize )
-{
-	MultiplyMatrix<false, true, CTmpMemoryHandler>( this, CpuInfo, first, firstRowSize, second, secondRowSize,
-		result, resultRowSize, firstHeight, secondHeight, firstWidth );
+	}
 }
 
 // result = first * T(second). The result size is firstHeight * secondHeight:

@@ -27,6 +27,7 @@ limitations under the License.
 #include <NeoMathEngine/Timer.h>
 
 static const bool PrintTimers = getenv("PRINT_TIMERS") != NULL ? true : false;
+static bool useMKL = getenv("USENEOML") == 0;
 
 namespace NeoML {
 
@@ -403,8 +404,6 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 
 	CFloatHandleStackVar tempData( mathEngine(), tempDataSize );
 	float* tempDataRaw = GetRaw( tempData.GetHandle() );
-	CFloatHandleStackVar R( mathEngine(), desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount() );
-	float* rRaw = GetRaw( R.GetHandle() );
 
 	NEOML_OMP_NUM_THREADS( curThreadCount )
 	{
@@ -417,14 +416,15 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 		if( OmpGetTaskIndexAndCount( resultItemCount, start, count ) ) {
 			int index = 0;
 			while( index < count ) {
+				CTimer t0, t1, t2;
 				const int size = min( count - index, cacheItemCount );
 
+				t1.Start();
 				fillTempData( sourceData, tempDataPtr, desc, start + index, size );
+				t1.Stop();
 
 				float* resultDataPtr = resultData + ( start + index ) * filterObjectCount;
-				float* rDataPtr = rRaw + ( start + index ) * filterObjectCount;
 
-				CTimer t0, t1, t2;
 
 				t0.Start();
 				multiplyMatrixByTransposedMatrix( tempDataPtr, size, filterObjectSize,
@@ -432,20 +432,11 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 					filterObjectCount );
 				t0.Stop();
 
-				t1.Start();
-				multiplyMatrixByTransposedMatrix_custom( tempDataPtr, size, filterObjectSize,
-					filterObjectSize, filterData, filterObjectCount, filterObjectSize, rDataPtr,
-					filterObjectCount );
-				t1.Stop();
-
 				if( freeTermData != nullptr ) {
 					t2.Start();
 					addVectorToMatrixRows( resultDataPtr, resultDataPtr, size, filterObjectCount, filterObjectCount, 
 						filterObjectCount, GetRaw( *freeTermData ) );
 					t2.Stop();
-
-					addVectorToMatrixRows( rDataPtr, rDataPtr, size, filterObjectCount, filterObjectCount,
-						filterObjectCount, GetRaw( *freeTermData ) );
 				}
 
 				index += size;
@@ -453,17 +444,17 @@ void CCpuMathEngine::blobConvolutionForwardAlgo0( const CCpuConvolutionDesc& des
 			}
 		}
 	}
-	float* f1 = rRaw;
-	float* f2 = resultData;
-	for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
-		const float e = max(abs(*f2 / 1e3), 5e-3 );
-		const float sub = *f1 - *f2;
-		if( !( sub > -e && sub < e ) ) {
-			ASSERT_EXPR( false);
-		}
-		f1++;
-		f2++;
-	}
+//	float* f1 = rRaw;
+//	float* f2 = resultData;
+//	for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
+//		const float e = max(abs(*f2 / 1e3), 5e-3 );
+//		const float sub = *f1 - *f2;
+//		if( !( sub > -e && sub < e ) ) {
+//			ASSERT_EXPR( false);
+//		}
+//		f1++;
+//		f2++;
+//	}
 
 //	ASSERT_EXPR( desc.Result.Width() == desc.Source.Width() );
 //	ASSERT_EXPR( desc.Result.Height() == desc.Source.Height() );
@@ -495,9 +486,6 @@ void CCpuMathEngine::blobConvolutionForwardAlgo1( const CCpuConvolutionDesc& des
 	CFloatHandleStackVar stackBuffer( mathEngine(), outputTransposedDataSize + tempBlobDataSize );
 	float* outputTransposedData = GetRaw( stackBuffer.GetHandle() );
 	float* tempBlobData = outputTransposedData + outputTransposedDataSize;
-	CFloatHandleStackVar stackBuffer1( mathEngine(), outputTransposedDataSize + tempBlobDataSize );
-	float* outputTransposedData1 = GetRaw( stackBuffer1.GetHandle() );
-	float* tempBlobData1= outputTransposedData1 + outputTransposedDataSize;
 
 	NEOML_OMP_NUM_THREADS( curThreadCount )
 	{
@@ -511,66 +499,39 @@ void CCpuMathEngine::blobConvolutionForwardAlgo1( const CCpuConvolutionDesc& des
 		int resultCount;
 		if( OmpGetTaskIndexAndCount2D( source.ObjectCount(), result.Width(), batchStart, batchCount, resultStart, resultCount ) ) {
 			for( int batch = batchStart; batch < batchStart + batchCount; batch++ ) {
+				CTimer t0, t1, t2;
 				const int tempObjectIndex = source.ObjectCount() <= tempObjectCount ? batch : OmpGetThreadNum();
 				float* outputTransposedPtr = outputTransposedData + tempObjectIndex * outputTransposedDataObjectSize
 					+ resultStart * outputTransposedDataRowSize;
-				float* outputTransposedPtr1 = outputTransposedData1 + tempObjectIndex * outputTransposedDataObjectSize
-					+ resultStart * outputTransposedDataRowSize;
 				float* tempBlobPtr = tempBlobData + tempObjectIndex * tempBlobDataObjectSize
-					+ resultStart * tempBlobDataRowSize;
-				float* tempBlobPtr1 = tempBlobData1 + tempObjectIndex * tempBlobDataObjectSize
 					+ resultStart * tempBlobDataRowSize;
 
 				// Fill the temporary matrix
+				t1.Start();
 				if( desc.DilationHeight > 1 || desc.DilationWidth > 1 ) {
 					createDilationTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr );
-					createDilationTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr1 );
 				} else {
 					createTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr );
-					createTemporaryBlob( desc, sourceData, batch, resultStart, resultCount, tempBlobPtr1 );
 				}
+				t1.Stop();
 
-				CTimer t0, t1, t2;
 				// Apply the filter to the temporary matrix
 				if( freeTermData != nullptr ) {
 					setVectorToMatrixRows( outputTransposedPtr, result.Height() * resultCount, outputChannels, freeTermDataRaw );
 
-					setVectorToMatrixRows( outputTransposedPtr1, result.Height() * resultCount, outputChannels, freeTermDataRaw );
 					t0.Start();
 					multiplyMatrixByTransposedMatrixAndAdd( tempBlobPtr, result.Height() * resultCount, filter.ObjectSize(),
 						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr,
 						filter.BatchWidth() );
 					t0.Stop();
-					t1.Start();
-					multiplyMatrixByTransposedMatrixAndAdd_custom( tempBlobPtr1, result.Height() * resultCount, filter.ObjectSize(),
-						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr1,
-						filter.BatchWidth() );
-					t1.Stop();
-
-					float* f1 = tempBlobPtr;
-					float* f2 = tempBlobPtr1;
-					for( int i = 0; i < desc.Result.Width() * desc.Result.Height() * desc.Filter.ObjectCount(); i++ ) {
-						const float e = max(abs(*f2 / 1e3), 5e-3 );
-						const float sub = *f1 - *f2;
-						if( !( sub > -e && sub < e ) ) {
-							ASSERT_EXPR( false);
-						}
-						f1++;
-						f2++;
-					}
 				} else {
 					t0.Start();
 					multiplyMatrixByTransposedMatrix( tempBlobPtr, result.Height() * resultCount, filter.ObjectSize(),
 						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr,
 						filter.BatchWidth() );
 					t0.Stop();
-					t1.Start();
-					multiplyMatrixByTransposedMatrix( tempBlobPtr1, result.Height() * resultCount, filter.ObjectSize(),
-						filter.ObjectSize(), filterData, filter.BatchWidth(), filter.ObjectSize(), outputTransposedPtr1,
-						filter.BatchWidth() );
-					t1.Stop();
 				}
-
+				
 				t2.Start();
 				// Transpose the result
 				transposeResult( desc, outputTransposedPtr, batch, resultStart, resultCount, resultData );

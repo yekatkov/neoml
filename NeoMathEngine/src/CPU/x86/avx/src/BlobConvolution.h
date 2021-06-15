@@ -246,7 +246,7 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 	int PartialStepCountAfterX = static_cast<const int>( std::ceil( ( StrideW * ( std::ceil( static_cast<float>( SrcW ) / StrideW ) - 1 ) - SrcW + PaddingW + 1 ) / StrideW ) );
 	int PartialStepCountBeforeY = static_cast<const int>( std::ceil( static_cast<float>( PaddingH ) / StrideH ) );
 	int PartialStepCountAfterY = static_cast<const int>( std::ceil( ( StrideH * ( std::ceil( static_cast<float>( SrcH ) / StrideH ) - 1 ) - SrcH + PaddingH + 1 ) / StrideH ) );
-	// For cases when filter window smaller than source image we may have situation where 
+	// For cases when filter window bigger than source image we may have situation where 
 	// PartialStepCountBefore and PartialStepCountAfter will overlap.
 	int CentralPartWidth = ResW - PartialStepCountBeforeX - PartialStepCountAfterX;
 	int CentralPartHeight = ResH - PartialStepCountBeforeY - PartialStepCountAfterY;

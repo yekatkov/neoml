@@ -29,6 +29,8 @@ limitations under the License.
 #include <CpuX86MathEngineBlasPrivate.h>
 #include <CpuX86MathEngineVectorMathPrivate.h>
 
+#include <NeoMathEngine/Timer.h>
+static const bool PrintTimers = getenv("PRINT_TIMERS") != NULL ? true : false;
 namespace NeoML {
 
 void CCpuMathEngine::blob3dConvolution1x1x1(  const CBlobDesc& source, const CBlobDesc& filter, const CBlobDesc& result,
@@ -44,6 +46,7 @@ void CCpuMathEngine::blob3dConvolution1x1x1(  const CBlobDesc& source, const CBl
 	// [geomSize x channels] * [newChannels x channels]T
 	// then add the free term if necessary
 
+CTimer t0,t1,t2;
 	const auto opCount = static_cast<int64_t>(source.BlobSize()) * static_cast<int64_t>(filter.BlobSize());
 	if( strideHeight == 1 && strideWidth == 1 && strideDepth == 1) {
 		if( geomSize > newChannels ) {
@@ -54,15 +57,20 @@ void CCpuMathEngine::blob3dConvolution1x1x1(  const CBlobDesc& source, const CBl
 				int geomCount;
 				if( OmpGetTaskIndexAndCount(geomSize, goodDenominatorFirst, geomStart, geomCount) ) {
 					float* outputDataPtr = resultData + geomStart * newChannels;
+					t2.Start();
 					if( freeTermData != 0 ) {
 						NeoML::setVectorToMatrixRows(outputDataPtr, geomCount, newChannels, freeTermData);
 					} else {
 						NeoML::vectorFill(outputDataPtr, 0, geomCount * newChannels);
 					}
+					t2.Stop();
+					t0.Start();
 					multiplyMatrixByTransposedMatrixAndAdd(sourceData + geomStart * channels,
 						geomCount, channels, channels,
 						filterData, newChannels, channels,
 						outputDataPtr, newChannels);
+					t0.Stop();
+					if( PrintTimers ) printf("_1x1[0]_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), geomCount, newChannels, channels );
 				}
 			}
 		} else {
@@ -74,6 +82,7 @@ void CCpuMathEngine::blob3dConvolution1x1x1(  const CBlobDesc& source, const CBl
 				if( OmpGetTaskIndexAndCount(newChannels, goodDenominatorSecond, channelStart, channelCount) ) {
 					float* resultPtr = resultData + channelStart;
 					float* resultEnd = resultPtr + newChannels * geomSize;
+					t2.Start();
 					if( freeTermData != 0 ) {
 						const float* freeTerm = freeTermData + channelStart;
 						for( float* res = resultPtr; res < resultEnd; res += newChannels ) {
@@ -84,10 +93,14 @@ void CCpuMathEngine::blob3dConvolution1x1x1(  const CBlobDesc& source, const CBl
 							NeoML::vectorFill(res, 0, channelCount);
 						}
 					}
+					t2.Stop();
+					t0.Start();
 					multiplyMatrixByTransposedMatrixAndAdd(sourceData,
 						geomSize, channels, channels,
 						filterData + channelStart * channels, channelCount, channels,
-						resultData + channelStart, newChannels);
+						resultData + channelStart, newChannels );
+					t0.Stop();
+					if( PrintTimers ) printf("_1x1[1]_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), geomSize, channelCount, channels );
 				}
 			}
 		}
@@ -117,15 +130,20 @@ void CCpuMathEngine::blob3dConvolution1x1x1(  const CBlobDesc& source, const CBl
 				}
 			
 				float* outputDataPtr = resultData + geomStart * newChannels;
+			t2.Start();
 			if( freeTermData != 0 ) {
 					NeoML::setVectorToMatrixRows(outputDataPtr, geomCount, newChannels, freeTermData);
 			} else {
 					NeoML::vectorFill(outputDataPtr, 0, geomCount * newChannels);
 			}
+			t2.Stop();
+			t0.Start();
 				multiplyMatrixByTransposedMatrixAndAdd(repackedData + geomStart * channels,
 					geomCount, channels, channels,
 					filterData, newChannels, channels,
 					outputDataPtr, newChannels);
+			t0.Stop();
+				if( PrintTimers ) printf("_1x1[2]_;%.4f;%.4f;%.4f;%d;%d;%d\n", t0.GetTimeInMs(), t1.GetTimeInMs(), t2.GetTimeInMs(), geomCount, newChannels, channels );
 		}
 	}
 }

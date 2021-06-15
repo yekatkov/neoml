@@ -76,6 +76,10 @@ limitations under the License.
 //     ^               ^
 //     MatrixA         MatrixC
 
+#define DISABLE_TIMERS
+#include <NeoMathEngine/Timer.h>
+static const bool PrintTimersInt = getenv("PRINT_TIMERS_INT") != NULL ? true : false;
+
 // Copies the C submatrix into a temporary buffer to process the boundaries
 template<class Kernel>
 inline void LoadCPart(float* dst, const float* src,
@@ -279,6 +283,23 @@ struct TailProcessorBottom<Kernel, typename SFINAEFilter<typename Kernel::TailKe
 	}
 };
 
+#ifndef DISABLE_TIMERS
+struct CTimerHandler {
+	CTimer all, prepA, prepB;
+	int Count;
+	int m, n, k;
+	~CTimerHandler()
+	{
+		if( Count > 0 ) {
+			if( PrintTimersInt ) printf("_int_;  %d;%d;%d;  %.4f;%.4f;  ;  %.4f;  %d;  ;  %.4f;  %d\n", m, n, k,
+				all.GetTimeInMs() / Count, ( all.GetTimeInMs() - prepA.GetTimeInMs() - prepB.GetTimeInMs() ) / Count,
+				prepA.GetTimeInMs() / Count, prepA.Count() / Count, prepB.GetTimeInMs() / Count, prepB.Count() / Count );
+		}
+	}
+};
+
+CTimerHandler th;
+#endif
 // Matrix product. Calculates the block size to fit into caches, 
 // prepares A and B matrix blocks and performs multiplication
 template<class Kernel, template<bool, size_t> class Interleaver, bool ATransposed, bool BTransposed, class MemoryHandler, class Engine>
@@ -287,6 +308,14 @@ struct CMatrixMultiplier {
 	static void Multiply(Engine *engine, const CCPUInfo &cpuInfo, const float* aPtr, size_t aRowSize,
 		const float* bPtr, size_t bRowSize, float* cPtr, size_t cRowSize, size_t m, size_t n, size_t k)
 	{
+#ifndef DISABLE_TIMERS
+		CTimer& all = th.all, &prepA = th.prepA, &prepB = th.prepB;
+		th.m = m;
+		th.n = n;
+		th.k = k;
+		th.Count++;
+		all.Start();
+#endif
 		// Calculate block size
 		// A and B micro-blocks should fit into L1, same as the micro-kernel result
 		// Several more cache lines may be taken up by the calling function variables
@@ -355,7 +384,13 @@ struct CMatrixMultiplier {
 			if( APrepared ) {
 				aTmp = aPtr;
 			} else {
+#ifndef DISABLE_TIMERS
+				prepA.Start();
+#endif
 				PreparerA::Prepare(aTmpBuffer, aPtr, aRowSize, m, kBlockSize);
+#ifndef DISABLE_TIMERS
+				prepA.Stop();
+#endif
 				aTmp = aTmpBuffer;
 			}
 			const float* lastBColumn = bPtr + bLineSize;
@@ -365,12 +400,21 @@ struct CMatrixMultiplier {
 			// Each block is copied to a temporary buffer
 			for( const float* bColumn = bPtr; bColumn < lastBColumn; bColumn += bWStep) {
 				size_t nBlockSize = nBlock < nLeft ? nBlock : nLeft;
+#ifndef DISABLE_TIMERS
+				prepB.Start();
+#endif
 				PreparerB::Prepare(bTmp, bColumn, bRowSize, kBlockSize, nBlockSize);
+#ifndef DISABLE_TIMERS
+				prepB.Stop();
+#endif
 				ProcessKernel<Kernel>(aTmp, bTmp, cColumn, cRowSize, kBlockSize, cTmp, m, nBlockSize);
 				cColumn += nBlock;
 				nLeft -= nBlock;
 			}
 		}
+#ifndef DISABLE_TIMERS
+		all.Stop();
+#endif
 	}
 private:
 	using PreparerA = PreparerAHelper<ATransposed, Kernel, Interleaver>;

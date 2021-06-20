@@ -15,6 +15,9 @@ limitations under the License.
 
 #include <array>
 #include <vector>
+#include <algorithm>
+#include <utility>
+
 #include <NeoMathEngine/NeoMathEngine.h>
 
 namespace NeoML {
@@ -82,14 +85,21 @@ private:
 	const int SrcXWindowSize;
 	const int ResLineStride;
 
+	// We calculate offset in filter window related to center of the such window.
+	// Value of item of PixelOffsetStep means x or y coordinate where we use next offset configuration from SrcPixelsOffset and FltPixelsOffset.
+	std::vector<int> PixelOffsetSrcStepsX;
+	std::vector<int> PixelOffsetSrcStepsY;
+	std::vector<int> PixelOffsetResStepsX;
+	std::vector<int> PixelOffsetResStepsY;
+
 	// Choose proper pixels in source and filter:
 	// 0  1  2
 	// 3  4  5
-	// 6  7  8
+	// 6  7  8 (example for 3x3)
 	// Offset is relative to central pixel of source window
-	const std::array<std::vector<int>, 16> SrcPixelsOffset;
+	std::vector<std::vector<int>> SrcPixelsOffset;
 	// Offset is relative to top left pixel of filter window
-	const std::array<std::vector<int>, 16>  FltPixelsOffset;
+	std::vector<std::vector<int>>  FltPixelsOffset;
 	// In some cases when the width of the image is nearly equals to the width of optimized batch processing window,
 	// we may faced to situation ( when dilation is higth ) when no one optimized batch ptocessing can be
 	// applied. For such cases we will use optimized batch processing with narrower window but height greater then one.
@@ -125,8 +135,12 @@ private:
 	// Rearrange filter and fill 'Filter' and 'FreeTerm' members.
 	const float* rearrangeFilter( const float* filterData, CFloatHandleStackVar& Filter );
 	const float* rearrangeFreeTerm( const float* freeTermData, CFloatHandleStackVar& FreeTerm );
-	const std::array<std::vector<int>, 16> fillSrcPixelOffset();
-	const std::array<std::vector<int>, 16> fillFltPixelOffset();
+	// Src (source), F(filter), D(dilation), S(stride) and P(padding) linear dimention by X or Y axis.
+	std::vector<int> getPixelOffsetSrcSteps( int SrcDim, int FDim, int DDim, int SDim, int PDim );
+	// Convert Src steps to Res steps
+	std::vector<int> getPixelOffsetResSteps( const std::vector<int>& PixelOffsetSrcSteps, int SrcDim, int FDim, int DDim, int SDim, int PDim );
+	// Initialize SrcPixelsOffset and FltPixelsOffset
+	void fillPixelOffset();
 
 	// Circular rotation of three ymm registers to the left, step equals to six floats.
 	static void rotateLeft6( __m256& y0, __m256& y1, __m256& y2 );
@@ -217,11 +231,15 @@ CBlobConvolution<FltCnt>::CBlobConvolution( IMathEngine* _mathEngine, int channe
 	SrcYDilation( DilationH * SrcLineStride ),
 	SrcXWindowSize( FltW * SrcXDilation ),
 	ResLineStride( ResW * FltCnt ),
-	SrcPixelsOffset( fillSrcPixelOffset() ),
-	FltPixelsOffset( fillFltPixelOffset() ),
+	PixelOffsetSrcStepsX( getPixelOffsetSrcSteps( int SrcW, int FltW, int DilationW, int StrideW, int PaddingW ) ),
+	PixelOffsetSrcStepsY( getPixelOffsetSrcSteps( int SrcH, int FltH, int DilationH, int StrideH, int PaddingH ) ),
+	PixelOffsetResStepsX( getPixelOffsetResSteps( PixelOffsetSrcStepsX, int SrcW, int FltW, int DilationW, int StrideW, int PaddingW ) ),
+	PixelOffsetResStepsY( getPixelOffsetResSteps( PixelOffsetSrcStepsY, int SrcH, int FltH, int DilationH, int StrideH, int PaddingH ) ),
 	NarrowBatchProcessSize( getNarrowBatchProcessSize() ),
 	WideBatchProcessSize( getWideBatchProcessSize() )
 {
+	// Init SrcPixelsOffset and FltPixelsOffset
+	fillPixelOffset();
 }
 
 template<int FltCnt>
@@ -241,43 +259,8 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 	const int ResRowCount = ResObjCnt * ResH;
 	const int curThreadCount = IsOmpRelevant( ResRowCount, ResRowCount * ResW * FltCnt * FltW * FltH * ChCnt ) ? threadCount : 1;
 
-	// Number of steps for each side of image, where filter is applied partially
-	int PartialStepCountBeforeX = static_cast<const int>( std::ceil( static_cast<float>( PaddingW ) / StrideW ) );
-	int PartialStepCountAfterX = static_cast<const int>( std::ceil( ( StrideW * ( std::ceil( static_cast<float>( SrcW ) / StrideW ) - 1 ) - SrcW + PaddingW + 1 ) / StrideW ) );
-	int PartialStepCountBeforeY = static_cast<const int>( std::ceil( static_cast<float>( PaddingH ) / StrideH ) );
-	int PartialStepCountAfterY = static_cast<const int>( std::ceil( ( StrideH * ( std::ceil( static_cast<float>( SrcH ) / StrideH ) - 1 ) - SrcH + PaddingH + 1 ) / StrideH ) );
-	// For cases when filter window bigger than source image we may have situation where 
-	// PartialStepCountBefore and PartialStepCountAfter will overlap.
-	int CentralPartWidth = ResW - PartialStepCountBeforeX - PartialStepCountAfterX;
-	int CentralPartHeight = ResH - PartialStepCountBeforeY - PartialStepCountAfterY;
-
-	std::array<int, 9> windowOffsets;
-	if( CentralPartHeight >= 0 && CentralPartWidth >= 0 ) {
-		windowOffsets = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-	} else {
-		// Correct PartialStepCounts
-		PartialStepCountBeforeX += CentralPartWidth < 0 ? CentralPartWidth : 0;
-		PartialStepCountAfterX += CentralPartWidth < 0 ? CentralPartWidth : 0;
-		PartialStepCountBeforeY += CentralPartHeight < 0 ? CentralPartHeight : 0;
-		PartialStepCountAfterY += CentralPartHeight < 0 ? CentralPartHeight : 0;
-
-		if( CentralPartWidth < 0 ) {
-			if( CentralPartHeight < 0 ) {
-				windowOffsets = { 0, 11, 2, 12, 4, 9, 6, 10, 15 };
-			} else {
-				windowOffsets = { 0, 11, 2, 12, 4, 9, 6, 10, 14 };
-			}
-		} else {
-			windowOffsets = { 0, 11, 2, 12, 4, 9, 6, 10, 13 };
-
-		}
-		CentralPartWidth = std::min( ResW, std::abs( CentralPartWidth ) );
-		CentralPartHeight = std::min( ResH, std::abs( CentralPartHeight ) );
-	}
-
-	// FilterH == FilterW == 3
-	const int srcXOffset = 0 + ( DilationW - PaddingW );
-	const int srcYOffset = 0 + ( DilationH - PaddingH );
+	const int srcXOffset = FilterW / 2 * DilationW - PaddingW;
+	const int srcYOffset = FilterH / 2 * DilationH - PaddingH;
 	
 	NEOML_OMP_NUM_THREADS( curThreadCount )
 	{
@@ -464,64 +447,105 @@ const float* CBlobConvolution<FltCnt>::rearrangeFreeTerm( const float* freeTermD
 	return resFreeTermStartPtr;
 }
 
-// Filter window offset
-// 0 1 2
-// 3 4 5
-// 6 7 8
 template<int FltCnt>
-const std::array<std::vector<int>, 16> CBlobConvolution<FltCnt>::fillSrcPixelOffset()
+std::vector<int> CBlobConvolution<FltCnt>::getPixelOffsetSrcSteps( int SrcDim, int FDim, int DDim, int SDim, int PDim )
 {
-	const int SrcLineStride = SrcW * ChCnt;
-	const int SrcYDilation = DilationH * SrcLineStride;
-	const int SrcXDilation = DilationW * ChCnt;
-	return {{
-		std::vector<int>{ 0, SrcXDilation, SrcYDilation, SrcYDilation + SrcXDilation }, // 0) 4 5 7 8
-		std::vector<int>{ -SrcXDilation, 0, SrcXDilation, SrcYDilation - SrcXDilation, SrcYDilation, SrcYDilation + SrcXDilation }, // 1) 3 4 5 6 7 8
-		std::vector<int>{ -SrcXDilation, 0, SrcYDilation - SrcXDilation, SrcYDilation }, // 2) 3 4 6 7
-		std::vector<int>{ -SrcYDilation - SrcXDilation, -SrcYDilation, -SrcXDilation, 0, SrcYDilation - SrcXDilation, SrcYDilation }, // 3) 0 1 3 4 6 7
-		std::vector<int>{ -SrcYDilation - SrcXDilation, -SrcYDilation, -SrcXDilation, 0 }, // 4) 0 1 3 4
-		std::vector<int>{ -SrcYDilation - SrcXDilation, -SrcYDilation, -SrcYDilation + SrcXDilation, -SrcXDilation, 0, SrcXDilation }, // 5) 0 1 2 3 4 5
-		std::vector<int>{ -SrcYDilation, -SrcYDilation + SrcXDilation, 0, SrcXDilation }, // 6) 1 2 4 5
-		std::vector<int>{ -SrcYDilation, -SrcYDilation + SrcXDilation, 0, SrcXDilation, SrcYDilation, SrcYDilation + SrcXDilation }, // 7) 1 2 4 5 7 8
-		std::vector<int>{ -SrcYDilation - SrcXDilation, -SrcYDilation, -SrcYDilation + SrcXDilation,
-			-SrcXDilation, 0, SrcXDilation,
-			SrcYDilation - SrcXDilation, SrcYDilation, SrcYDilation + SrcXDilation}, // 8) whole filter
+	vector<int> ret(FDim);
+	const int halfFDim = FDim / 2;
 
-		std::vector<int>{ -SrcYDilation, 0 }, // 9) 1 4
-		std::vector<int>{ 0, SrcXDilation }, // 10) 4 5
-		std::vector<int>{ 0, SrcYDilation }, // 11) 4 7
-		std::vector<int>{ -SrcXDilation, 0 }, // 12) 3 4
-		std::vector<int>{ -SrcXDilation, 0, SrcXDilation }, // 13) 3 4 5
-		std::vector<int>{ -SrcYDilation, 0, SrcYDilation }, // 14) 1 4 7
-		std::vector<int>{ 0 } // 15) 4
-	}};
+	// Take in consideration paddings
+	int firstSrc = halfFDim * DDim - PDim;
+	int lastSrc = SrcDim - 1;
+	ret[0] = firstSrc;
+
+	for (int i = 1; i <= halfFDim; i++) {
+		// up to middle
+		ret[i] = firstSrc + (i * DDim - firstSrc + SDim - 1) / SDim * SDim;
+	}
+
+	// (lastSrc - 2 * firstSrc) - новая ширина окна
+	int lastIdx = firstSrc + (lastSrc - 2 * firstSrc) / SDim * SDim;
+	for (int i = FDim - 1, j = 1; i > FDim / 2; i--, j++) {
+		// from last to next to middle
+		ret[i] = lastIdx - (lastIdx + j * DDim - lastSrc) / SDim * SDim + SDim;
+	}
+
+	sort(ret.begin(), ret.end());
+
+	// Remove out of range and repeated items
+	auto start = ret.begin();
+	while (*start < 0) start++;
+	auto end = start;
+	auto tempIt = end + 1;
+	int lastSrcDim = SrcDim - firstSrc - 1;
+	while (tempIt != ret.end() && *tempIt <= lastSrcDim)
+	{
+		if (*tempIt != *end) {
+			int temp = *tempIt;
+			*(++end) = temp;
+		}
+		tempIt++;
+	}
+	end++;
+
+	return vector<int>( start, end );
 }
 
 template<int FltCnt>
-const std::array<std::vector<int>, 16>  CBlobConvolution<FltCnt>::fillFltPixelOffset()
+std::vector<int> CBlobConvolution<FltCnt>::getPixelOffsetResSteps( const std::vector<int>& PixelOffsetSrcSteps, int SrcDim, int FDim, int DDim, int SDim, int PDim )
 {
-	return {{
-		std::vector<int>{ 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8, 8 * ChCnt * FltCntM8 }, // 0) 4 5 7 8
-		std::vector<int>{ 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8, 6 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8, 8 * ChCnt * FltCntM8 }, // 1) 3 4 5 6 7 8
-		std::vector<int>{ 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 6 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8 }, // 2) 3 4 6 7
-		std::vector<int>{ 0 * ChCnt * FltCntM8, 1 * ChCnt * FltCntM8, 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 6 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8 }, // 3) 0 1 3 4 6 7
-		std::vector<int>{ 0 * ChCnt * FltCntM8, 1 * ChCnt * FltCntM8, 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8 }, // 4) 0 1 3 4
-		std::vector<int>{ 0 * ChCnt * FltCntM8, 1 * ChCnt * FltCntM8, 2 * ChCnt * FltCntM8, 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8 }, // 5) 0 1 2 3 4 5
-		std::vector<int>{ 1 * ChCnt * FltCntM8, 2 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8 }, // 6) 1 2 4 5
-		std::vector<int>{ 1 * ChCnt * FltCntM8, 2 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8, 8 * ChCnt * FltCntM8 }, // 7) 1 2 4 5 7 8
-		std::vector<int>{ 0 * ChCnt * FltCntM8, 1 * ChCnt * FltCntM8, 2 * ChCnt * FltCntM8,
-			3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8,
-			6 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8, 8 * ChCnt * FltCntM8 }, // 8) whole filter
+	using namespace std;
+	vector<int> ret( PixelOffsetSrcSteps.size() );
+	const int firstSrc = FDim / 2 * DDim - PDim;
+	for ( int i = 0; i < ret.size(); i++ ) {
+		ret[i] = ( PixelOffsetSrcSteps - firstSrc ) / SDim;
+	}
+	return ret;
+}
 
-		
-		std::vector<int>{ 1 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8 }, // 9) 1 4
-		std::vector<int>{ 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8 }, // 10) 4 5
-		std::vector<int>{ 4 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8 }, // 11) 4 7
-		std::vector<int>{ 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8 }, // 12) 3 4
-		std::vector<int>{ 3 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 5 * ChCnt * FltCntM8 }, // 13) 3 4 5
-		std::vector<int>{ 1 * ChCnt * FltCntM8, 4 * ChCnt * FltCntM8, 7 * ChCnt * FltCntM8 }, // 14) 1 4 7
-		std::vector<int>{ 4 * ChCnt * FltCntM8 } // 15) 4
-	}};
+template<int FltCnt>
+void CBlobConvolution<FltCnt>::fillPixelOffset()
+{
+	using namespace std;
+	
+	auto getFilterWindowSize = [](const vector<int>& pixelOffsetSrcSteps, int SrcDim, int FDim, int DDim) -> vector<pair<int, int>> {
+		// first - count of items in filter from center to top
+		// second - count of items in filter from center to bottom
+		vector<pair<int, int>> ret( pixelOffsetSrcSteps.size() );
+		for (int i = 0; i < pixelOffsetSrcSteps.size(); i++ ) {
+			ret[i] = make_pair(
+				const int halfFDim = FDim / 2;
+				min( pixelOffsetSrcSteps[i] / DDim, halfFDim ),
+				min( ( ( SrcDim - 1 ) - pixelOffsetSrcSteps[i] ) / DDim, halfFDim )
+		}
+		return ret;
+	};
+
+	vector<pair<int, int>> offsetSizeX = getFilterWindowSize( PixelOffsetSrcStepsX, SrcW, FltW, DilationW );
+	vector<pair<int, int>> offsetSizeY = getFilterWindowSize( PixelOffsetSrcStepsY, SrcH, FltH, DilationH );
+
+	auto fillPixelOffset = []( int hStride, int wStride ) ->vector<vector<int>> {
+		vector<vector<int>> offsets( offsetSizeX.size() * offsetSizeY.size() );
+		auto it = offsets.begin();
+
+		for ( const auto& y : offsetSizeY ) {
+			for ( const auto& x : offsetSizeX ) {
+				it->resize( ( x.first + x.second + 1 ) * ( y.first + y.second + 1 ) );
+				auto it_offt = it->begin();
+				for ( int i = -y.first; i <= y.second; i++ ) {
+					for ( int j = -x.first; j <= x.second; j++ ) {
+						*it_offt++ = i * hStride + j * wStride;
+					}
+				}
+				it++;
+			}
+		}
+		return offsets;
+	};
+
+	SrcPixelsOffset = fillPixelOffset( SrcW * DilationH, DilationW );
+	FltPixelsOffset = fillPixelOffset( FltW, 1 );
+	
 }
 
 template<int FltCnt>

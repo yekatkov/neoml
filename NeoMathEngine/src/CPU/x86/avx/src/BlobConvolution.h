@@ -87,10 +87,8 @@ private:
 
 	// We calculate offset in filter window related to center of the such window.
 	// Value of item of PixelOffsetStep means x or y coordinate where we use next offset configuration from SrcPixelsOffset and FltPixelsOffset.
-	std::vector<int> PixelOffsetSrcStepsX;
-	std::vector<int> PixelOffsetSrcStepsY;
-	std::vector<int> PixelOffsetResStepsX;
-	std::vector<int> PixelOffsetResStepsY;
+	std::vector<int> PixelOffsetResStepsWidthX;
+	std::vector<int> PixelOffsetResStepsWidthY;
 
 	// Choose proper pixels in source and filter:
 	// 0  1  2
@@ -137,9 +135,8 @@ private:
 	const float* rearrangeFreeTerm( const float* freeTermData, CFloatHandleStackVar& FreeTerm );
 	// Src (source), F(filter), D(dilation), S(stride) and P(padding) linear dimention by X or Y axis.
 	std::vector<int> getPixelOffsetSrcSteps( int SrcDim, int FDim, int DDim, int SDim, int PDim );
-	// Convert Src steps to Res steps
-	std::vector<int> getPixelOffsetResSteps( const std::vector<int>& PixelOffsetSrcSteps, int SrcDim, int FDim, int DDim, int SDim, int PDim );
-	// Initialize SrcPixelsOffset and FltPixelsOffset
+	
+	// Initialize PixelOffsetResStepsX, PixelOffsetResStepsY, SrcPixelsOffset and FltPixelsOffset
 	void fillPixelOffset();
 
 	// Circular rotation of three ymm registers to the left, step equals to six floats.
@@ -162,7 +159,7 @@ public:
 
 bool CBlobConvolutionFabric::IsBlobConvolutionAvailable( int FltCnt, int FltH, int FltW )
 {
-	if( FltH != 3 || FltW != 3 ) {
+	if( FltH % 2 == 0 || FltW % 2 == 0 ) {
 		return false;
 	}
 	if( FltCnt == 24 ||
@@ -231,10 +228,6 @@ CBlobConvolution<FltCnt>::CBlobConvolution( IMathEngine* _mathEngine, int channe
 	SrcYDilation( DilationH * SrcLineStride ),
 	SrcXWindowSize( FltW * SrcXDilation ),
 	ResLineStride( ResW * FltCnt ),
-	PixelOffsetSrcStepsX( getPixelOffsetSrcSteps( int SrcW, int FltW, int DilationW, int StrideW, int PaddingW ) ),
-	PixelOffsetSrcStepsY( getPixelOffsetSrcSteps( int SrcH, int FltH, int DilationH, int StrideH, int PaddingH ) ),
-	PixelOffsetResStepsX( getPixelOffsetResSteps( PixelOffsetSrcStepsX, int SrcW, int FltW, int DilationW, int StrideW, int PaddingW ) ),
-	PixelOffsetResStepsY( getPixelOffsetResSteps( PixelOffsetSrcStepsY, int SrcH, int FltH, int DilationH, int StrideH, int PaddingH ) ),
 	NarrowBatchProcessSize( getNarrowBatchProcessSize() ),
 	WideBatchProcessSize( getWideBatchProcessSize() )
 {
@@ -250,7 +243,8 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 	CFloatHandleStackVar freeTermTempBuffer( *mathEngine, FltCntM8 );
 
 	src = sourceData;
-	flt = rearrangeFilter( filterData, filterTempBuffer );
+	// Filter offset also are calculated from center
+	flt = rearrangeFilter( filterData, filterTempBuffer ) + ( FltW * FltH ) / 2 * ChCnt * FltCntM8;
 	freeTerm = rearrangeFreeTerm( freeTermData, freeTermTempBuffer );
 	res = resultData;
 
@@ -259,8 +253,8 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 	const int ResRowCount = ResObjCnt * ResH;
 	const int curThreadCount = IsOmpRelevant( ResRowCount, ResRowCount * ResW * FltCnt * FltW * FltH * ChCnt ) ? threadCount : 1;
 
-	const int srcXOffset = FilterW / 2 * DilationW - PaddingW;
-	const int srcYOffset = FilterH / 2 * DilationH - PaddingH;
+	const int srcXOffset = FltW / 2 * DilationW - PaddingW;
+	const int srcYOffset = FltH / 2 * DilationH - PaddingH;
 	
 	NEOML_OMP_NUM_THREADS( curThreadCount )
 	{
@@ -286,44 +280,24 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 				// Iterate through result, left->right, top->bottom
 				const int currentRH = min( ResH, ryStart + ryCount );
 				int ry = ryStart;
+				int yStep = ryStart;
+				
+				for ( int yStepIdx = 0; yStepIdx < PixelOffsetResStepsWidthY.size(); yStepIdx++ ) {
+					 yStep += PixelOffsetResStepsWidthY[yStepIdx];
+					int ryEnd = min( yStep, currentRH );
+					for ( ; ry < ryEnd; ) {
+						const float* srcPtr = realSrcStart + ( srcYOffset + ry ) * SrcYStep;
+						float* resPtr = realResStart + ry * ResLineStride;
+						bool useNarrowProcessing = ryEnd - ry >= NarrowBatchProcessSize.Height;
+						
+						int pixelsOffsetIdx = yStepIdx * PixelOffsetResStepsWidthX.size();
 
-				int ryEnd = min( PartialStepCountBeforeY, currentRH );
-				while( ry < ryEnd ) {
-					// Top part of image
-					const float* srcPtr = realSrcStart + ( srcYOffset + ry ) * SrcYStep;
-					float* resPtr = realResStart + ry * ResLineStride;
-					bool useNarrowProcessing = (ryEnd)-ry >= NarrowBatchProcessSize.Height;
-
-					processConvolutionLoop( PartialStepCountBeforeX, useNarrowProcessing, srcPtr, resPtr, windowOffsets[0] );
-					processConvolutionLoop( CentralPartWidth, useNarrowProcessing, srcPtr, resPtr, windowOffsets[1] );
-					processConvolutionLoop( PartialStepCountAfterX, useNarrowProcessing, srcPtr, resPtr, windowOffsets[2] );
-					ry += useNarrowProcessing ? NarrowBatchProcessSize.Height : WideBatchProcessSize.Height;
-				}
-
-				ryEnd = min( ResH - PartialStepCountAfterY, currentRH );
-				while( ry < ryEnd ) {
-					// Middle part of image
-					const float* srcPtr = realSrcStart + ( srcYOffset + ry ) * SrcYStep;
-					float* resPtr = realResStart + ry * ResLineStride;
-					bool useNarrowProcessing = (ryEnd)-ry >= NarrowBatchProcessSize.Height;
-
-					processConvolutionLoop( PartialStepCountBeforeX, useNarrowProcessing, srcPtr, resPtr, windowOffsets[7] );
-					processConvolutionLoop( CentralPartWidth, useNarrowProcessing, srcPtr, resPtr, windowOffsets[8] );
-					processConvolutionLoop( PartialStepCountAfterX, useNarrowProcessing, srcPtr, resPtr, windowOffsets[3] );
-					ry += useNarrowProcessing ? NarrowBatchProcessSize.Height : WideBatchProcessSize.Height;
-				}
-
-				ryEnd = min( ResH, currentRH );
-				while( ry < ryEnd ) {
-					// Bottom part of image
-					const float* srcPtr = realSrcStart + ( srcYOffset + ry ) * SrcYStep;
-					float* resPtr = realResStart + ry * ResLineStride;
-					bool useNarrowProcessing = (ryEnd)-ry >= NarrowBatchProcessSize.Height;
-
-					processConvolutionLoop( PartialStepCountBeforeX, useNarrowProcessing, srcPtr, resPtr, windowOffsets[6] );
-					processConvolutionLoop( CentralPartWidth, useNarrowProcessing, srcPtr, resPtr, windowOffsets[5] );
-					processConvolutionLoop( PartialStepCountAfterX, useNarrowProcessing, srcPtr, resPtr, windowOffsets[4] );
-					ry += useNarrowProcessing ? NarrowBatchProcessSize.Height : WideBatchProcessSize.Height;
+						for ( const auto& xStep : PixelOffsetResStepsWidthX ) {
+							processConvolutionLoop( xStep, useNarrowProcessing, srcPtr, resPtr, pixelsOffsetIdx );
+							pixelsOffsetIdx++;
+						}
+						ry += useNarrowProcessing ? NarrowBatchProcessSize.Height : WideBatchProcessSize.Height;
+					}
 				}
 			}
 		}
@@ -492,39 +466,47 @@ std::vector<int> CBlobConvolution<FltCnt>::getPixelOffsetSrcSteps( int SrcDim, i
 }
 
 template<int FltCnt>
-std::vector<int> CBlobConvolution<FltCnt>::getPixelOffsetResSteps( const std::vector<int>& PixelOffsetSrcSteps, int SrcDim, int FDim, int DDim, int SDim, int PDim )
-{
-	using namespace std;
-	vector<int> ret( PixelOffsetSrcSteps.size() );
-	const int firstSrc = FDim / 2 * DDim - PDim;
-	for ( int i = 0; i < ret.size(); i++ ) {
-		ret[i] = ( PixelOffsetSrcSteps - firstSrc ) / SDim;
-	}
-	return ret;
-}
-
-template<int FltCnt>
 void CBlobConvolution<FltCnt>::fillPixelOffset()
 {
 	using namespace std;
-	
-	auto getFilterWindowSize = [](const vector<int>& pixelOffsetSrcSteps, int SrcDim, int FDim, int DDim) -> vector<pair<int, int>> {
+	vector<int> pixelOffsetSrcStepsX = getPixelOffsetSrcSteps( SrcW, FltW, DilationW, StrideW, PaddingW );
+	vector<int> pixelOffsetSrcStepsY = getPixelOffsetSrcSteps( SrcH, FltH, DilationH, StrideH, PaddingH );
+
+	auto getPixelOffsetResStepsWidth = []( const std::vector<int>& pixelOffsetSrcSteps, int srcDim, int fDim, int dDim, int sDim, int pDim )
+	{
+		vector<int> ret( pixelOffsetSrcSteps.size() );
+		const int firstSrcIdx = fDim / 2 * dDim - pDim;
+		const int lastIdx = firstSrcIdx + ( srcDim - 2 * firstSrcIdx ) / sDim * sDim;
+
+		int i = 0;
+		for ( ; i < ret.size() - 1; i++ ) {
+			ret[i] = ( pixelOffsetSrcSteps[i + 1] - pixelOffsetSrcSteps[i] ) / sDim;
+		}
+		ret[i] = ( lastIdx - pixelOffsetSrcSteps[i] ) / sDim;
+
+		return ret;
+	};
+
+	PixelOffsetResStepsWidthX = getPixelOffsetResStepsWidth( pixelOffsetSrcStepsX, SrcW, FltW, DilationW, StrideW, PaddingW );
+	PixelOffsetResStepsWidthY = getPixelOffsetResStepsWidth( pixelOffsetSrcStepsY, SrcH, FltH, DilationH, StrideH, PaddingH );
+
+	auto getFilterWindowSize = [](const vector<int>& pixelOffsetSrcSteps, int srcDim, int fDim, int dDim) -> vector<pair<int, int>> {
 		// first - count of items in filter from center to top
 		// second - count of items in filter from center to bottom
 		vector<pair<int, int>> ret( pixelOffsetSrcSteps.size() );
 		for (int i = 0; i < pixelOffsetSrcSteps.size(); i++ ) {
-			ret[i] = make_pair(
-				const int halfFDim = FDim / 2;
-				min( pixelOffsetSrcSteps[i] / DDim, halfFDim ),
-				min( ( ( SrcDim - 1 ) - pixelOffsetSrcSteps[i] ) / DDim, halfFDim )
+			const int halfFDim = fDim / 2;
+			ret[i] = make_pair(	
+				min( pixelOffsetSrcSteps[i] / dDim, halfFDim ),
+				min( ( ( srcDim - 1 ) - pixelOffsetSrcSteps[i] ) / dDim, halfFDim ) );
 		}
 		return ret;
 	};
 
-	vector<pair<int, int>> offsetSizeX = getFilterWindowSize( PixelOffsetSrcStepsX, SrcW, FltW, DilationW );
-	vector<pair<int, int>> offsetSizeY = getFilterWindowSize( PixelOffsetSrcStepsY, SrcH, FltH, DilationH );
+	vector<pair<int, int>> offsetSizeX = getFilterWindowSize( pixelOffsetSrcStepsX, SrcW, FltW, DilationW );
+	vector<pair<int, int>> offsetSizeY = getFilterWindowSize( pixelOffsetSrcStepsY, SrcH, FltH, DilationH );
 
-	auto fillPixelOffset = []( int hStride, int wStride ) ->vector<vector<int>> {
+	auto fillPixelOffset = [&]( int hStride, int wStride ) ->vector<vector<int>> {
 		vector<vector<int>> offsets( offsetSizeX.size() * offsetSizeY.size() );
 		auto it = offsets.begin();
 
@@ -543,8 +525,8 @@ void CBlobConvolution<FltCnt>::fillPixelOffset()
 		return offsets;
 	};
 
-	SrcPixelsOffset = fillPixelOffset( SrcW * DilationH, DilationW );
-	FltPixelsOffset = fillPixelOffset( FltW, 1 );
+	SrcPixelsOffset = fillPixelOffset( SrcYDilation, SrcXDilation );
+	FltPixelsOffset = fillPixelOffset( FltW * ChCnt * FltCntM8, ChCnt * FltCntM8 );
 	
 }
 

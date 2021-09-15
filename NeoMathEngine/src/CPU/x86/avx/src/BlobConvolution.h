@@ -24,10 +24,12 @@ limitations under the License.
 
 #include <xbyak/xbyak.h>
 
-#define JIT_DEBUG
+//#define JIT_DEBUG
 #include <JitDebug.h>
 
 namespace NeoML {
+
+static constexpr unsigned int SizeOfYmm = 8 * sizeof( float );
 
 using reg64_t = Xbyak::Reg64;
 
@@ -131,6 +133,36 @@ private:
                                      int windowIndex );
     };
 
+
+    class CFilterRearrange : public Xbyak::CodeGenerator {
+    public:
+        CFilterRearrange( CBlobConvolution& blobConvolutoin );
+        const float* RearrangeFilter( const float* filterData, CFloatHandleStackVar& filterTempBuffer )
+        {
+            float* resFilterStartPtr = static_cast< float* >( bc.mathEngine->GetBuffer( filterTempBuffer.GetHandle(), 0, filterTempBuffer.Size() * sizeof( float ), false ) );
+            float* resFilter = resFilterStartPtr;
+            getCode<void(*)( const float*, float*)>()( filterData, resFilterStartPtr );
+            return resFilterStartPtr;
+        }
+    private:
+        void startLoop( Xbyak::Label& labelStart, Xbyak::Label& labelStop, Xbyak::Reg64& regCount, int loopCount )
+        {
+            xor_( regCount, regCount );
+            L( labelStart );
+            cmp( regCount, loopCount );
+            je( labelStop, T_NEAR );
+        }
+
+        void stopLoop( Xbyak::Label& labelStart, Xbyak::Label& labelStop, Xbyak::Reg64& regCount )
+        {
+            inc( regCount );
+            jmp( labelStart, T_NEAR );
+            L( labelStop );
+        }
+
+        CBlobConvolution& bc;
+    };
+
 	IMathEngine* mathEngine;
 
 	const int ChCnt;
@@ -198,6 +230,7 @@ private:
 	const CSize WideBatchProcessSize;
 
 	std::vector<std::unique_ptr<CCode>> jitCodes;
+	std::unique_ptr<CFilterRearrange> jitFilterRearrange;
 
 	// Initialize NarrowBatchProcessSize and WideBatchProcessSize
 	CSize getNarrowBatchProcessSize();
@@ -364,12 +397,6 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 	CFloatHandleStackVar filterTempBuffer( *mathEngine, FltW * FltH * CorrectedFltCntM8 * ChCnt );
 	CFloatHandleStackVar freeTermTempBuffer( *mathEngine, CorrectedFltCntM8 );
 	jitDebug.StopProcess();
-	src = sourceData;
-	// Filter offset also are calculated from center
-	flt = rearrangeFilter( filterData, filterTempBuffer ) + ( FltW * FltH ) / 2 * ChCnt * FltCntM8;
-	freeTerm = rearrangeFreeTerm( freeTermData, freeTermTempBuffer );
-	res = resultData;
-
 
 	if( UseJit && !jitIsInited ) {
 		jitDebug.StartPrepare();
@@ -380,8 +407,19 @@ void CBlobConvolution<FltCnt>::ProcessConvolution( int threadCount,
 		for( auto& jitCode : jitCodes ) {
 			codeSize += jitCode->getSize();
 		}
+		codeSize += jitFilterRearrange->getSize();
 		jitDebug.SetCodeSize( codeSize );
 	}
+
+	src = sourceData;
+	// Filter offset also are calculated from center
+	if( UseJit ) {
+		flt = jitFilterRearrange->RearrangeFilter( filterData, filterTempBuffer ) + ( FltW * FltH ) / 2 * ChCnt * FltCntM8;
+	} else {
+		flt = rearrangeFilter( filterData, filterTempBuffer ) + ( FltW * FltH ) / 2 * ChCnt * FltCntM8;
+	}
+	freeTerm = rearrangeFreeTerm( freeTermData, freeTermTempBuffer );
+	res = resultData;
 
 	jitDebug.StartProcess();
 	const int SrcObjSize = SrcW * SrcH * ChCnt;
@@ -496,6 +534,7 @@ inline void CBlobConvolution<FltCnt>::initJitCodes()
 	for( int yStepIndex = 0; yStepIndex < PixelOffsetResStepsWidthY.size(); yStepIndex++ ) {
 		jitCodes[yStepIndex] = std::unique_ptr<CCode>( new CCode( *this, yStepIndex ) );
 	}
+	jitFilterRearrange = std::unique_ptr<CFilterRearrange>( new CFilterRearrange( *this ) );
 }
 
 template<int FltCnt>
@@ -981,6 +1020,276 @@ inline void CBlobConvolution<FltCnt>::CCode::initProcessingMainLoop( CBlobConvol
 
 	// return from function
 	jmp( labelEndOfProcessingFunction, T_NEAR );
+}
+
+template<int FltCnt>
+ CBlobConvolution<FltCnt>::CFilterRearrange::CFilterRearrange( CBlobConvolution<FltCnt>& blobConvolutoin ) :
+    bc( blobConvolutoin )
+{
+	using namespace Xbyak;
+	using namespace Xbyak::util;
+
+	//FIXME: for windows
+	// arg 0:
+	Reg64 regSrc = FuncParam1;
+	// arg 1:
+	Reg64 regDst = FuncParam2;
+
+	// Internal vars:
+	Reg64 regTempSrc = FuncParam3;
+	Reg64 regCount0 = FuncParam4;
+	Reg64 regCount1 = FuncParam5;
+	const bool IsFltCntMultBy8 = FltCnt == bc.FltCntM8;
+
+    const size_t SrcStep = bc.FltW * bc.FltH * bc.ChCnt;
+    const int RegsPerFltCntM8 = bc.FltCntM8 / 8;
+    // We would use not all regData depending on isFltCntMultBy8
+    Ymm regData[15] = { ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7,
+                        ymm8, ymm9, ymm10, ymm11, ymm12, ymm13, ymm14 };
+    // Used for gathering SIMD instruction
+    Ymm regVindex = ymm15;
+    // gather all floats
+    Ymm regFullMask = ymm14;
+    Ymm regTemp = ymm13;
+    // Used if isFltCntMultBy8 is true
+    Ymm regMask = ymm12;
+    Ymm regPermuteIdx = ymm11;
+    // For case where isFltCntMultBy8 is true we will use two additional registers for mask and permutate index.
+    const int ActualRegDataLen = IsFltCntMultBy8 ? 13 : 11;
+    // We can iterate several channels at time if all filters are fit in ymm regs (but not less than one)
+    const int ChannelsPerIteration = max( ActualRegDataLen / RegsPerFltCntM8, 1 );
+
+
+	Label labelProcessChannels;
+	Label labelVindexValues;
+	Label labelMaskValues;
+	Label labelPermuteLeftShiftValues;
+
+	push( rbp );
+	mov( rbp, rsp );
+	vxorps( regFullMask, regFullMask, regFullMask );
+	// Distance between FltCnt pixels
+	vmovdqa( regVindex, ptr[rip + labelVindexValues] );
+	// We will set all bits to One ( ordering and signaling doesn't matter in our case,
+	// because we clear our register one instruction before.
+	vcmpps( regFullMask, regFullMask, regFullMask, _CMP_EQ_OS );
+
+	if( !IsFltCntMultBy8 ) {
+		// Mask for loading partial filters
+		vmovdqa( regMask, ptr[rip + labelMaskValues] );
+		// Load index for left shifting of temp first register
+		vmovdqa( regPermuteIdx, ptr[rip + labelPermuteLeftShiftValues] );
+	}
+
+	for( int fltCntStep = 0; fltCntStep < bc.CorrectedFltCnt; fltCntStep += FltCnt ) {
+		const size_t fltCntOffset = bc.FltW * bc.FltH * fltCntStep;
+		for( int y = 0; y < bc.FltH; y++ ) {
+			for( int x = 0; x < bc.FltW; x++ ) {
+				lea( regTempSrc, ptr[regSrc + ( fltCntOffset + x + y * bc.FltW ) * bc.ChCnt * sizeof( float )] );
+				call( labelProcessChannels );
+			}
+		}
+	}
+	leave();
+
+
+	auto loadStoreSequence = [&]( Ymm* regData, size_t chanelLoopCount, size_t filterLoopCount ) {
+
+		if( filterLoopCount == 0 ) {
+			return;
+		}
+
+		int regIdx = 0;
+		// In vgatherdps instruction 'mask' operand is cleared each call of it.
+		// Therefore we will initialize src register with all ones and will use it as mask.
+		for( int i = 0; i < chanelLoopCount * filterLoopCount; i++ ) {
+			vmovaps( regData[i], regFullMask );
+		}
+
+		for( int c = 0; c < chanelLoopCount; c++ ) {
+			size_t srcOffset = c * sizeof( float ); // pointer to current channel
+			for( int f = 0; f < filterLoopCount; f++ ) {
+				vgatherdps( regData[regIdx], ptr[( regTempSrc + srcOffset ) + // base address
+												   regVindex * //index
+												   sizeof( float ) ], // scale
+												   regData[regIdx] );
+				regIdx++;
+				srcOffset += SrcStep * SizeOfYmm;
+			}
+		}
+		// Update pointer to regTempSrc
+		add( regTempSrc, chanelLoopCount * filterLoopCount * SrcStep * SizeOfYmm );
+
+		regIdx = 0;
+		size_t dstOffset = 0;
+		for( int c = 0; c < chanelLoopCount; c++ ) {
+			for( int f = 0; f < filterLoopCount; f++ ) {
+				vmovups( ptr[regDst + dstOffset], regData[regIdx] );
+				dstOffset += SizeOfYmm;
+			}
+		}
+		add( regDst, chanelLoopCount * filterLoopCount * SizeOfYmm );
+	};
+
+	//////////////////////////////////////////////////////////////////////////////
+	/// If the FltCnt is NOT a multiple of 8.
+	/////////////////////////////////////////////////////////////////////////////
+	auto processWithPartialSteps = [&]( int currentFiltersCount ) {
+		/*if( currentFiltersCount == 0 ) {
+			return;
+		}
+
+		size_t srcOffset = 0;
+		size_t dstOffset = 0;
+
+		if( RegsPerFltCntM8 > ActualRegDataLen ) {
+			// Example for FltCnt == 140
+			// 1. Load first register
+			//   Src[0..7] -> regData[0]
+			// 2. Load other register ( except last one ) trough regData[1..12] and store them
+			//   Src[8..135] -> regData[1..12] -> Dst[8..135]
+			// 3. Load last register
+			//   Src[136..139] -> regData[x]
+			// 4. Complete last register with four first floats from first register.
+			//   regData[x] |= ( regData[0] << 4 ) & 0xf0
+			// 5. store first and last registers
+			//   regData[0] -> Dst[0..7]
+			//   regData[x] -> Dst[136..143]
+			// 1.Load first register
+			vmovups( regData[0], ptr[regTempSrc + srcOffset] );
+			srcOffset += SrcStep;
+			// We will store this register later by zerro offset
+			dstOffset += SizeOfYmm;
+
+			// 2. Load other registers expect last.
+			Label labelStartLoop1, labelStopLoop1;
+			// Number of registers for process. Without first and last register (-2)
+			const size_t RegistersForProcess = RegsPerFltCntM8 - 2;
+			//  We will use regData[1..12], because first register is preserved.
+			size_t CurrentRegDataLen = ActualRegDataLen - 1;
+
+			// Load store registers in loop by group of CurrentRegDataLen register
+			startLoop( labelStartLoop1, labelStopLoop1, regCount1, RegistersForProcess / CurrentRegDataLen );
+			loadStoreSequence( &regData[1], 1, CurrentRegDataLen, srcOffset, dstOffset, 0 );
+			add( regTempSrc, CurrentRegDataLen * SrcStep );
+			stopLoop( labelStartLoop1, labelStopLoop1, regCount1 );
+
+			// Copy remained registers
+			loadStoreSequence( &regData[1], 1, RegistersForProcess % CurrentRegDataLen, srcOffset, dstOffset, 0 );
+
+			// Last register is regData item folowed after last used one.
+			Ymm regLast = regData[RegistersForProcess % CurrentRegDataLen + 1];
+			Ymm regPermuteIdx = regData[2];
+			// Copy first register to temp
+			vmovaps( regLast, regData[0] );
+			// Store first register
+			vmovups( ptr[regDst + dstOffset], regData[0] );
+			// Shift first register's data to the left by ( FltCntM8 % FltCnt )
+			vpermps ( regLast, regLast, regPermuteIdx );
+			// Load last register with mask
+			vgatherdps( regLast, ptr[regTempSrc + srcOffset + regVindex * sizeof( float ) ], regMask );
+		} else {
+			// Example for FltCnt == 60
+			// 1. Load all register except last and store them
+			//   Src[0..7] -> Dst[0..7]
+			//   Src[8..15] -> Dst[8..15]
+			//   ...
+			//   Src[48..55] -> Dst[48..55]
+			// 2. Complete last register with four first floats from first register.
+			//   regData[7] |= ( regData[0] << 4 ) & 0xf0
+			// 3. store last registers
+
+			int filterIdx;
+			for( filterIdx = 0; filterIdx < RegsPerFltCntM8 - 1; filterIdx++ ) {
+				vmovups( regData[filterIdx], ptr[regTempSrc + srcOffset] );
+				srcOffset += SrcStep;
+			}
+
+			for( filterIdx = 0; filterIdx < RegsPerFltCntM8 - 1; filterIdx++ ) {
+				vmovups( ptr[regDst + dstOffset], regData[filterIdx] );
+				dstOffset += SizeOfYmm;
+			}
+			// Last register is regData item folowed after last used one.
+			Ymm regLast = regData[filterIdx];
+			Ymm regPermuteIdx = regData[2];
+			// Copy first register to temp
+			vmovaps( regLast, regData[0] );
+			// Store first register
+			vmovups( ptr[regDst + dstOffset], regData[0] );
+			// Shift first register's data to the left by ( FltCntM8 % FltCnt )
+			vpermps ( regLast, regLast, regPermuteIdx );
+			// Load last register with mask
+			vgatherdps( regLast, ptr[regTempSrc + srcOffset + regVindex * sizeof( float ) ], regMask );
+		}
+*/
+	};
+
+	//////////////////////////////////////////////////////////////////////////////
+	/// If the FltCnt is a multiple of 8.
+	/////////////////////////////////////////////////////////////////////////////
+	auto processWithoutPartialSteps = [&]( int currentChannelsCount ) {
+		if( RegsPerFltCntM8 / ActualRegDataLen > 0 ) {
+			// Obviously that currentChannelsCount equals to 1
+			// We should use loop for data copying
+			Label labelStartLoop1, labelStopLoop1;
+			startLoop( labelStartLoop1, labelStopLoop1, regCount1, RegsPerFltCntM8 / ActualRegDataLen );
+			loadStoreSequence( &regData[0], 1, ActualRegDataLen );
+			stopLoop( labelStartLoop1, labelStopLoop1, regCount1 );
+		}
+		// Copy remained registers
+		loadStoreSequence( &regData[0], currentChannelsCount, RegsPerFltCntM8 % ActualRegDataLen );
+	};
+
+
+    //////////////////////////////////////////////////////////////////////////////
+    L( labelProcessChannels );
+
+	Label labelStartLoop0, labelStopLoop0;
+	if( bc.ChCnt / ChannelsPerIteration > 0 ) {
+		// Loop 0:
+		// for( int regCount = 0; regCount < bc.ChCnt / FiltersPerIteration; regCount++ )
+		startLoop( labelStartLoop0, labelStopLoop0, regCount0, bc.ChCnt / ChannelsPerIteration );
+		if( IsFltCntMultBy8 ) {
+			processWithoutPartialSteps( ChannelsPerIteration );
+		} else {
+			processWithPartialSteps( ChannelsPerIteration );
+		}
+		add( regTempSrc, ChannelsPerIteration * sizeof( float ) );
+
+		// End loop 0
+		stopLoop( labelStartLoop0, labelStopLoop0, regCount0 );
+	}
+
+	if( bc.ChCnt % ChannelsPerIteration > 0 ) {
+		if( IsFltCntMultBy8 ) {
+			processWithoutPartialSteps( bc.ChCnt % ChannelsPerIteration );
+		} else {
+			processWithPartialSteps( bc.ChCnt % ChannelsPerIteration );
+		}
+	}
+
+	ret();
+
+	align( 32 );
+	L( labelVindexValues );
+	for( int i = 0; i < 8; i++ ){
+		dd( i * SrcStep );
+	}
+	if( IsFltCntMultBy8 ) {
+		L( labelMaskValues );
+		int i = 0;
+		for( ; i < FltCnt; i++ ) {
+			dd( 1 );
+		}
+		for( ; i < FltCntM8; i++ ) {
+			dd( 0 );
+		}
+
+		L( labelPermuteLeftShiftValues );
+		for( int i = FltCnt % bc.FltCntM8; i < FltCnt % bc.FltCntM8 + 8; i++ ) {
+			dd( i );
+		}
+	}
 }
 
 } // namespace NeoML
